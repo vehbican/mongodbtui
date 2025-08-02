@@ -38,8 +38,8 @@ cargo --version
 
 ### Build & Install
 ```sh
-git clone git@github.com:vehbican/mongodb-tui.git
-cd mongodb-tui
+git clone git@github.com:vehbican/mongodbtui.git
+cd mongodbtui
 chmod +x install.sh
 ./install.sh
 mongodbtui
