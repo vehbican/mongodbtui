@@ -132,6 +132,7 @@ pub fn load_connections() -> std::io::Result<Vec<Connection>> {
         Ok(vec![])
     }
 }
+#[allow(dead_code)]
 pub fn infer_bson_value(original: &Bson, input: &str) -> Bson {
     match original {
         Bson::Int32(_) => input

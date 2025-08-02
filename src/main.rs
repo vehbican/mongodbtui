@@ -15,6 +15,7 @@ use ratatui::{
 use std::io;
 use tui::events::handle_key_event;
 use tui::input::render_input;
+use widgets::render_editor::render_editor;
 use widgets::{
     connection_panel::render_connections,
     documents::render_documents,
@@ -46,6 +47,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         terminal.draw(|f| {
+            if state.mode == AppMode::Editor {
+                let area = f.area();
+                render_editor(f, area, &state);
+                return;
+            }
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Min(0), Constraint::Length(1)])

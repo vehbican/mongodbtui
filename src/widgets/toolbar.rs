@@ -11,6 +11,7 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
     let mode_text = match state.mode {
         AppMode::Normal => "[NORMAL]",
         AppMode::Insert => "[INSERT]",
+        AppMode::Editor => "[EDITOR]",
     };
 
     let mut status_line = format!("{}", mode_text);

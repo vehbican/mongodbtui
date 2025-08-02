@@ -2,11 +2,13 @@ use crate::app::{ActiveInputField, AppMode, AppState, FocusArea, InputContext, S
 use crate::db::client::update_field_in_document;
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
 use crate::tui::fpicker_events;
-use crate::utils::{infer_bson_value, load_connections, parse_connection_input, save_connection};
+use crate::utils::{load_connections, parse_connection_input, save_connection};
 use crate::widgets::help_popup::HELP_TEXT;
 use bson::Bson;
+use bson::oid::ObjectId;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
+use unicode_width::UnicodeWidthStr;
 
 pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
     if state.file_picker.is_some() {
@@ -306,18 +308,10 @@ pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
             KeyCode::Char('e') => match state.focus {
                 FocusArea::Documents => {
                     if let Some(doc) = state.current_documents.get(state.selected_doc_index) {
-                        if let Some((_key, value)) = doc.iter().nth(state.selected_field_index) {
-                            state.mode = AppMode::Insert;
-                            state.input_context = InputContext::FieldEdit;
-
-                            state.input_text = match value {
-                                bson::Bson::String(s) => s.clone(),
-                                _ => format!("{}", value),
-                            };
-
-                            state.active_input = None;
-                            state.cursor_position = state.input_text.chars().count();
-                        }
+                        state.mode = AppMode::Editor;
+                        state.input_context = InputContext::FieldEditEditor;
+                        state.input_text = serde_json::to_string_pretty(doc).unwrap_or_default();
+                        state.cursor_position = state.input_text.chars().count();
                     }
                 }
                 _ => {
@@ -590,6 +584,8 @@ pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
                             return false;
                         }
                     }
+                    InputContext::FieldEditEditor => {}
+
                     InputContext::ConnectionName => {
                         match crate::utils::update_connection(&state.input_text) {
                             Ok(_) => {
@@ -636,64 +632,6 @@ pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
                                         Some("No active MongoDB connection".to_string());
                                     return false;
                                 }
-                            }
-                        }
-                    }
-                    InputContext::FieldEdit => {
-                        if let Some(client) = &state.mongo_client {
-                            let (db, collection) = match &state.selected_collection {
-                                Some((_, db, collection)) => (db.clone(), collection.clone()),
-                                _ => return false,
-                            };
-                            let doc = match state
-                                .current_documents
-                                .get(state.selected_doc_index)
-                                .cloned()
-                            {
-                                Some(d) => d,
-                                None => return false,
-                            };
-                            let field_index = state.selected_field_index;
-
-                            if let Some(field_name) = doc.keys().nth(field_index) {
-                                if field_name == "_id" {
-                                    state.popup_message =
-                                        Some("❌ Cannot edit _id field.".to_string());
-                                    return false;
-                                }
-
-                                if let Some(id) = doc.get_object_id("_id").ok() {
-                                    let original_value = doc.get(field_name).unwrap_or(&Bson::Null);
-                                    let new_value =
-                                        infer_bson_value(original_value, &state.input_text);
-
-                                    match update_field_in_document(
-                                        client,
-                                        &db,
-                                        &collection,
-                                        id,
-                                        field_name,
-                                        new_value,
-                                    )
-                                    .await
-                                    {
-                                        Ok(_) => {
-                                            state.reload_documents_for_selected_collection().await;
-                                        }
-                                        Err(e) => {
-                                            state.popup_message =
-                                                Some(format!("❌ Update failed: {}", e));
-                                            return false;
-                                        }
-                                    }
-                                } else {
-                                    state.popup_message =
-                                        Some("❌ Document has no valid _id.".to_string());
-                                    return false;
-                                }
-                            } else {
-                                state.popup_message = Some("❌ Invalid field index.".to_string());
-                                return false;
                             }
                         }
                     }
@@ -787,6 +725,146 @@ pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
                 };
                 if state.cursor_position < len {
                     state.cursor_position += 1;
+                }
+            }
+
+            _ => {}
+        },
+
+        AppMode::Editor => match key.code {
+            KeyCode::Esc => {
+                state.mode = AppMode::Normal;
+                state.input_context = InputContext::None;
+                state.input_text.clear();
+                state.cursor_position = 0;
+            }
+            KeyCode::Enter => {
+                match serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(
+                    &state.input_text,
+                ) {
+                    Ok(map) => {
+                        if let Some(id_value) = map.get("_id") {
+                            if let Ok(object_id) = bson::from_bson::<ObjectId>(
+                                bson::to_bson(id_value).unwrap_or(Bson::Null),
+                            ) {
+                                if let Some((_, db, col)) = &state.selected_collection {
+                                    if let Some(client) = &state.mongo_client {
+                                        for (field, value) in map {
+                                            if field == "_id" {
+                                                continue;
+                                            }
+                                            let bson_val =
+                                                bson::to_bson(&value).unwrap_or(Bson::Null);
+                                            if let Err(e) = update_field_in_document(
+                                                client,
+                                                db,
+                                                col,
+                                                object_id.clone(),
+                                                &field,
+                                                bson_val,
+                                            )
+                                            .await
+                                            {
+                                                state.popup_message = Some(format!(
+                                                    "❌ Failed to update '{}': {}",
+                                                    field, e
+                                                ));
+                                                return false;
+                                            }
+                                        }
+
+                                        state.reload_documents_for_selected_collection().await;
+                                        state.popup_message_success =
+                                            Some("✅ Document updated successfully.".to_string());
+                                        state.mode = AppMode::Normal;
+                                        state.input_text.clear();
+                                        state.cursor_position = 0;
+                                    }
+                                }
+                            } else {
+                                state.popup_message =
+                                    Some("❌ _id field is not a valid ObjectId.".to_string());
+                            }
+                        } else {
+                            state.popup_message = Some("❌ Document must contain _id.".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        state.popup_message = Some(format!("❌ Invalid JSON: {}", e));
+                    }
+                }
+            }
+            KeyCode::Char(c) => {
+                state.input_text.insert(state.cursor_position, c);
+                state.cursor_position += 1;
+            }
+            KeyCode::Backspace => {
+                if state.cursor_position > 0 {
+                    state.input_text.remove(state.cursor_position - 1);
+                    state.cursor_position -= 1;
+                }
+            }
+            KeyCode::Left => {
+                if state.cursor_position > 0 {
+                    state.cursor_position -= 1;
+                }
+            }
+            KeyCode::Right => {
+                if state.cursor_position < state.input_text.len() {
+                    state.cursor_position += 1;
+                }
+            }
+            KeyCode::Up => {
+                let text_up_to_cursor = &state.input_text[..state.cursor_position];
+                let mut lines: Vec<&str> = text_up_to_cursor.split('\n').collect();
+
+                if lines.len() > 1 {
+                    let current_line = lines.pop().unwrap_or("");
+                    let above_line = lines.last().unwrap_or(&"");
+
+                    let current_col = current_line.width();
+                    let target_col = current_col.min(above_line.width());
+
+                    let mut new_position = 0;
+                    for i in 0..(lines.len() - 1) {
+                        new_position += lines[i].len() + 1;
+                    }
+                    new_position += above_line
+                        .chars()
+                        .take(target_col)
+                        .map(|c| c.len_utf8())
+                        .sum::<usize>();
+
+                    state.cursor_position = new_position.min(state.input_text.len());
+                }
+            }
+
+            KeyCode::Down => {
+                let lines: Vec<&str> = state.input_text.split('\n').collect();
+
+                let mut byte_offset = 0;
+                let mut line_idx = 0;
+                let mut col = 0;
+
+                for (i, line) in lines.iter().enumerate() {
+                    let line_len = line.len() + 1;
+                    if byte_offset + line_len > state.cursor_position {
+                        line_idx = i;
+                        col = state.cursor_position - byte_offset;
+                        break;
+                    }
+                    byte_offset += line_len;
+                }
+
+                if line_idx + 1 < lines.len() {
+                    let next_line = lines[line_idx + 1];
+                    let target_col = col.min(next_line.len());
+                    let mut new_position = 0;
+                    for i in 0..=line_idx {
+                        new_position += lines[i].len() + 1;
+                    }
+                    new_position += target_col;
+                    state.cursor_position = new_position.min(state.input_text.len());
                 }
             }
 

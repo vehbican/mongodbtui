@@ -4,4 +4,5 @@ pub mod header;
 pub mod help_popup;
 pub mod import;
 pub mod popup;
+pub mod render_editor;
 pub mod toolbar;

@@ -10,6 +10,7 @@ use unicode_segmentation::UnicodeSegmentation;
 pub enum AppMode {
     Normal,
     Insert,
+    Editor,
 }
 #[derive(PartialEq)]
 pub enum FocusArea {
@@ -34,7 +35,7 @@ pub enum InputContext {
     Uri,
     ConnectionName,
     CollectionName,
-    FieldEdit,
+    FieldEditEditor,
     None,
 }
 pub enum SelectableItem {

@@ -57,6 +57,15 @@ Space       Select/Deselect file
 Enter       Enter directory
 c           Confirm action (import/run)
 Esc         Exit file picker
+
+Editor Mode (Full-screen document editor):
+Esc     Exit editor without saving
+Enter       Parse and save document (must include valid _id)
+← / →       Move cursor left/right
+↑ / ↓       Move cursor up/down
+Backspace   Delete character
+
+
 "#;
 
 pub fn draw_help_popup(f: &mut Frame<'_>, area: Rect, scroll: usize) {
