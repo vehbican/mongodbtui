@@ -19,6 +19,7 @@ pub fn render_editor(f: &mut Frame, area: Rect, state: &AppState) {
 
     let visible_height = area.height.saturating_sub(2);
     let scroll_y = cursor_y.saturating_sub(visible_height.saturating_sub(1));
+    let relative_y = cursor_y.saturating_sub(scroll_y);
 
     let paragraph = Paragraph::new(state.input_text.as_str())
         .block(block)
@@ -27,5 +28,5 @@ pub fn render_editor(f: &mut Frame, area: Rect, state: &AppState) {
 
     f.render_widget(paragraph, area);
 
-    f.set_cursor_position((area.x + cursor_x + 1, area.y + cursor_y + 1));
+    f.set_cursor_position((area.x + cursor_x + 1, area.y + relative_y + 1));
 }
