@@ -34,7 +34,6 @@ pub async fn open_in_external_editor(state: &mut AppState) -> Result<(), String>
     let edited = edit(&initial).map_err(|e| format!("Dış editör açılamadı: {e}"))?;
 
     if edited.trim() == initial.trim() {
-        state.popup_message_success = Some("Kaydedildi (değişiklik yok).".into());
         state.redraw = true;
         return Ok(());
     }

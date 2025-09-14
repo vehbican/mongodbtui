@@ -1,6 +1,7 @@
 use crate::app::{ActiveInputField, AppMode, AppState, FocusArea, InputContext, SelectableItem};
 use crate::keybindings::editor::open_in_external_editor;
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
+use crate::utils::read_clipboard_string;
 use crate::widgets::help_popup::HELP_TEXT;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
@@ -474,6 +475,38 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                         }
                     }
                     _ => {}
+                }
+            }
+        }
+        KeyCode::Char('p') => {
+            if state.focus == FocusArea::FilterSortInputs {
+                match read_clipboard_string() {
+                    Ok(mut clip) => {
+                        if clip.ends_with('\n') {
+                            clip.pop();
+                        }
+                        match state.active_input.unwrap_or(ActiveInputField::Filter) {
+                            ActiveInputField::Filter => {
+                                if state.filter_text.is_empty() {
+                                    state.filter_text = clip;
+                                } else {
+                                    state.filter_text.push_str(&clip);
+                                }
+                                state.cursor_position = state.filter_text.chars().count();
+                            }
+                            ActiveInputField::Sort => {
+                                if state.sort_text.is_empty() {
+                                    state.sort_text = clip;
+                                } else {
+                                    state.sort_text.push_str(&clip);
+                                }
+                                state.cursor_position = state.sort_text.chars().count();
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        state.popup_message = Some(format!("❌ Yapıştırma başarısız: {e}"));
+                    }
                 }
             }
         }

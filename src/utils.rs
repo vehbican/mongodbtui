@@ -1,4 +1,5 @@
 use crate::app::Connection;
+use arboard::Clipboard;
 use bson::Bson;
 use std::{
     fs::{File, OpenOptions},
@@ -132,6 +133,12 @@ pub fn load_connections() -> std::io::Result<Vec<Connection>> {
         Ok(vec![])
     }
 }
+pub fn read_clipboard_string() -> Result<String, String> {
+    let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
+    cb.get_text()
+        .map_err(|e| format!("Clipboard okunamadı: {e}"))
+}
+
 #[allow(dead_code)]
 pub fn infer_bson_value(original: &Bson, input: &str) -> Bson {
     match original {
