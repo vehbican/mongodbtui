@@ -1,6 +1,7 @@
 use crate::app::{AppMode, InputContext};
 use app::AppState;
 use crossterm::{
+    cursor::SetCursorStyle,
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -15,7 +16,6 @@ use ratatui::{
 use std::io;
 use tui::events::handle_key_event;
 use tui::input::render_input;
-use widgets::render_editor::render_editor;
 use widgets::{
     connection_panel::render_connections,
     documents::render_documents,
@@ -25,11 +25,21 @@ use widgets::{
     popup::{render_popup, render_popup_success},
     toolbar::render_status_bar,
 };
+
 mod app;
 mod db;
+mod keybindings;
 mod tui;
 mod utils;
 mod widgets;
+
+fn apply_cursor_style(state: &AppState) {
+    let style = match state.mode {
+        AppMode::Insert => SetCursorStyle::SteadyBar,
+        AppMode::Normal => SetCursorStyle::SteadyBlock,
+    };
+    let _ = execute!(io::stdout(), style);
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -45,13 +55,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     state.rebuild_tree_items();
 
+    apply_cursor_style(&state);
+
     loop {
+        if state.redraw {
+            terminal.clear()?;
+            state.redraw = false;
+        }
         terminal.draw(|f| {
-            if state.mode == AppMode::Editor {
-                let area = f.area();
-                render_editor(f, area, &state);
-                return;
-            }
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Min(0), Constraint::Length(1)])
@@ -73,21 +84,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             render_status_bar(f, chunks[1], &state);
             render_popup(f, f.area(), &state);
             render_popup_success(f, f.area(), &state);
+
             if state.mode == AppMode::Insert && state.input_context != InputContext::None {
                 render_input(f, f.area(), &mut state);
             }
 
             if let Some(picker) = &state.file_picker {
                 f.render_widget(Block::default(), f.area());
-
                 let popup_area = centered_rect(60, 60, f.area());
                 render_file_picker(f, popup_area, picker);
             }
+
             if state.show_help {
                 let area = centered_rect(70, 70, f.area());
                 draw_help_popup(f, area, state.help_scroll);
             }
         })?;
+
+        apply_cursor_style(&state);
 
         if let Some(uri) = state.connect_to.clone() {
             handle_connection(&mut state, &uri).await;
@@ -97,9 +111,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             handle_collection_listing(&mut state, &db_uri, &db_name).await;
         }
 
-        /*   if let Some((uri, db, name)) = state.fetch_collection_data.clone() {
-            fetch_and_update_documents(&mut state, &uri, &db, &name).await;
-        }*/
         if let Some((uri, db, name)) = state.fetch_collection_data.clone() {
             fetch_and_update_documents(&mut state, &uri, &db, &name).await;
         }
@@ -113,6 +124,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    let _ = execute!(io::stdout(), SetCursorStyle::DefaultUserShape);
 
     disable_raw_mode()?;
     execute!(

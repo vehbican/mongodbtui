@@ -10,7 +10,6 @@ use unicode_segmentation::UnicodeSegmentation;
 pub enum AppMode {
     Normal,
     Insert,
-    Editor,
 }
 #[derive(PartialEq)]
 pub enum FocusArea {
@@ -35,9 +34,9 @@ pub enum InputContext {
     Uri,
     ConnectionName,
     CollectionName,
-    FieldEditEditor,
     None,
 }
+
 pub enum SelectableItem {
     Uri {
         uri: String,
@@ -110,6 +109,7 @@ pub struct AppState {
     pub file_picker: Option<FilePickerState>,
     pub show_help: bool,
     pub help_scroll: usize,
+    pub redraw: bool,
 }
 
 impl Default for AppState {
@@ -151,6 +151,7 @@ impl Default for AppState {
             file_picker: None,
             show_help: false,
             help_scroll: 0,
+            redraw: false,
         }
     }
 }

@@ -109,23 +109,126 @@ pub async fn count_documents(
 
     collection.count_documents(filter_doc).await
 }
-pub async fn update_field_in_document(
+pub async fn apply_edited_document(
     client: &Client,
     db_name: &str,
     collection_name: &str,
-    document_id: ObjectId,
-    field_name: &str,
-    new_value: Bson,
-) -> Result<(), mongodb::error::Error> {
+    original: &Document,
+    edited: &Document,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let id_bson = edited.get("_id").ok_or("_id alanı yok")?;
+    let oid = match id_bson {
+        Bson::ObjectId(oid) => *oid,
+        _ => return Err("_id bir ObjectId olmalı".into()),
+    };
+
+    let (mut set_doc, unset_doc) = diff_docs_deep(original, edited);
+
+    set_doc.remove("_id");
+
+    let mut update = Document::new();
+    if !set_doc.is_empty() {
+        update.insert("$set", Bson::Document(set_doc));
+    }
+    if !unset_doc.is_empty() {
+        update.insert("$unset", Bson::Document(unset_doc));
+    }
+
+    if update.is_empty() {
+        return Ok(());
+    }
+
     let db = client.database(db_name);
-    let collection = db.collection::<Document>(collection_name);
+    let coll = db.collection::<Document>(collection_name);
+    coll.update_one(doc! { "_id": oid }, update)
+        .await
+        .map(|_| ())
+        .map_err(Into::into)
+}
 
-    let filter = doc! { "_id": document_id };
+fn diff_docs_deep(original: &Document, edited: &Document) -> (Document, Document) {
     let mut set_doc = Document::new();
-    set_doc.insert(field_name, new_value);
-    let update = doc! { "$set": set_doc };
+    let mut unset_doc = Document::new();
 
-    collection.update_one(filter, update).await.map(|_| ())
+    for (k, new_v) in edited.iter() {
+        if k == "_id" {
+            continue;
+        }
+        match original.get(k) {
+            None => {
+                set_doc.insert(k, new_v.clone());
+            }
+            Some(old_v) => {
+                diff_value("", k, old_v, new_v, &mut set_doc);
+            }
+        }
+    }
+
+    for (k, _) in original.iter() {
+        if k == "_id" {
+            continue;
+        }
+        if !edited.contains_key(k) {
+            unset_doc.insert(k, Bson::String("".into()));
+        }
+    }
+
+    (set_doc, unset_doc)
+}
+
+fn diff_value(prefix: &str, key: &str, old_v: &Bson, new_v: &Bson, set_doc: &mut Document) {
+    use Bson::*;
+    if old_v == new_v {
+        return;
+    }
+
+    let full_key = if prefix.is_empty() {
+        key.to_string()
+    } else {
+        format!("{prefix}.{key}")
+    };
+
+    match (old_v, new_v) {
+        (Document(old_d), Document(new_d)) => {
+            for (child_k, new_child_v) in new_d.iter() {
+                match old_d.get(child_k) {
+                    Some(old_child_v) => {
+                        diff_value(&full_key, child_k, old_child_v, new_child_v, set_doc);
+                    }
+                    None => {
+                        let dotted = format!("{full_key}.{child_k}");
+                        set_doc.insert(dotted, new_child_v.clone());
+                    }
+                }
+            }
+        }
+        (Array(_), Array(_)) => {
+            set_doc.insert(full_key, new_v.clone());
+        }
+        _ => {
+            set_doc.insert(full_key, new_v.clone());
+        }
+    }
+}
+
+pub async fn apply_edited_json(
+    client: &Client,
+    db_name: &str,
+    collection_name: &str,
+    original: &Document,
+    edited_json: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let edited_doc: Document = match serde_json::from_str(edited_json) {
+        Ok(d) => d,
+        Err(_) => {
+            let v: serde_json::Value = serde_json::from_str(edited_json)?;
+            match bson::to_bson(&v)? {
+                Bson::Document(d) => d,
+                _ => return Err("JSON bir obje ({}) olmalı".into()),
+            }
+        }
+    };
+    apply_edited_document(client, db_name, collection_name, original, &edited_doc).await
 }
 pub async fn delete_documents_by_filter(
     client: &Client,
