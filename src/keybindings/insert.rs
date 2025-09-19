@@ -1,6 +1,6 @@
 use crate::app::SelectableItem;
 use crate::app::{ActiveInputField, AppMode, AppState, InputContext};
-use crate::tui::events::goto_collection;
+use crate::tui::events::{clamp_cursor, goto_collection, is_braced_object};
 use crate::utils::read_clipboard_string;
 use crate::utils::{load_connections, parse_connection_input, save_connection};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -186,18 +186,28 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                 match state.active_input {
                     Some(ActiveInputField::Filter) => {
                         if state.cursor_position > 0 {
-                            let mut chars: Vec<char> = state.filter_text.chars().collect();
-                            chars.remove(state.cursor_position - 1);
-                            state.filter_text = chars.iter().collect();
-                            state.cursor_position -= 1;
+                            if is_braced_object(&state.filter_text) && state.cursor_position == 1 {
+                            } else {
+                                let mut chars: Vec<char> = state.filter_text.chars().collect();
+                                chars.remove(state.cursor_position - 1);
+                                state.filter_text = chars.into_iter().collect();
+                                state.cursor_position -= 1;
+                                state.cursor_position =
+                                    clamp_cursor(state.cursor_position, &state.filter_text);
+                            }
                         }
                     }
                     Some(ActiveInputField::Sort) => {
                         if state.cursor_position > 0 {
-                            let mut chars: Vec<char> = state.sort_text.chars().collect();
-                            chars.remove(state.cursor_position - 1);
-                            state.sort_text = chars.iter().collect();
-                            state.cursor_position -= 1;
+                            if is_braced_object(&state.sort_text) && state.cursor_position == 1 {
+                            } else {
+                                let mut chars: Vec<char> = state.sort_text.chars().collect();
+                                chars.remove(state.cursor_position - 1);
+                                state.sort_text = chars.into_iter().collect();
+                                state.cursor_position -= 1;
+                                state.cursor_position =
+                                    clamp_cursor(state.cursor_position, &state.sort_text);
+                            }
                         }
                     }
                     _ => {}

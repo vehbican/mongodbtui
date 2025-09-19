@@ -1,6 +1,6 @@
 use crate::app::{ActiveInputField, AppMode, AppState, FocusArea, InputContext, SelectableItem};
 use crate::keybindings::editor::open_in_external_editor;
-use crate::tui::events::goto_collection;
+use crate::tui::events::{goto_collection, inner_end_pos};
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
 use crate::utils::read_clipboard_string;
 use crate::widgets::help_popup::HELP_TEXT;
@@ -50,8 +50,8 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     _ => Some(ActiveInputField::Filter),
                 };
                 state.cursor_position = match state.active_input {
-                    Some(ActiveInputField::Filter) => state.filter_text.chars().count(),
-                    Some(ActiveInputField::Sort) => state.sort_text.chars().count(),
+                    Some(ActiveInputField::Filter) => inner_end_pos(&state.filter_text),
+                    Some(ActiveInputField::Sort) => inner_end_pos(&state.sort_text),
                     _ => 0,
                 };
             }
@@ -604,8 +604,9 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                             state.focus = FocusArea::Documents;
                             state.selected_doc_index = 0;
                             state.doc_scroll_offset = 0;
-                            state.filter_text.clear();
-                            state.sort_text.clear();
+                            state.filter_text = "{}".to_string();
+                            state.sort_text = "{}".to_string();
+                            state.cursor_position = 1;
                             state.reset_field_index();
                         }
                     }

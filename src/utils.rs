@@ -1,6 +1,5 @@
 use crate::app::Connection;
 use arboard::Clipboard;
-use bson::Bson;
 use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Write},
@@ -137,62 +136,4 @@ pub fn read_clipboard_string() -> Result<String, String> {
     let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
     cb.get_text()
         .map_err(|e| format!("Clipboard okunamadı: {e}"))
-}
-
-#[allow(dead_code)]
-pub fn infer_bson_value(original: &Bson, input: &str) -> Bson {
-    match original {
-        Bson::Int32(_) => input
-            .parse::<i32>()
-            .map(Bson::Int32)
-            .unwrap_or(Bson::String(input.to_string())),
-        Bson::Int64(_) => input
-            .parse::<i64>()
-            .map(Bson::Int64)
-            .unwrap_or(Bson::String(input.to_string())),
-        Bson::Double(_) => input
-            .parse::<f64>()
-            .map(Bson::Double)
-            .unwrap_or(Bson::String(input.to_string())),
-        Bson::Boolean(_) => match input.to_lowercase().as_str() {
-            "true" => Bson::Boolean(true),
-            "false" => Bson::Boolean(false),
-            _ => Bson::String(input.to_string()),
-        },
-        Bson::ObjectId(_) => bson::oid::ObjectId::parse_str(input)
-            .map(Bson::ObjectId)
-            .unwrap_or(Bson::String(input.to_string())),
-        Bson::Null => {
-            if input.trim().to_lowercase() == "null" {
-                Bson::Null
-            } else {
-                Bson::String(input.to_string())
-            }
-        }
-        Bson::Array(_) => {
-            let items = input
-                .split(',')
-                .map(|s| Bson::String(s.trim().to_string()))
-                .collect();
-            Bson::Array(items)
-        }
-        Bson::Document(_) => match serde_json::from_str::<serde_json::Value>(input) {
-            Ok(json) => bson::to_bson(&json).unwrap_or(Bson::String(input.to_string())),
-            Err(_) => Bson::String(input.to_string()),
-        },
-        Bson::RegularExpression(_) => {
-            if input.starts_with('/') && input.rfind('/').map_or(false, |i| i > 0) {
-                let end = input.rfind('/').unwrap();
-                let pattern = &input[1..end];
-                let options = &input[end + 1..];
-                Bson::RegularExpression(bson::Regex {
-                    pattern: pattern.to_string(),
-                    options: options.to_string(),
-                })
-            } else {
-                Bson::String(input.to_string())
-            }
-        }
-        _ => Bson::String(input.to_string()),
-    }
 }
