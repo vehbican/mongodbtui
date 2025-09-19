@@ -24,6 +24,7 @@ pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
         InputContext::Uri => "Enter Mongo URI",
         InputContext::ConnectionName => "Edit Connection Name",
         InputContext::CollectionName => "Rename Collection",
+        InputContext::SearchCollections => "Search Collections",
         InputContext::None => unreachable!(),
     };
 

@@ -34,6 +34,7 @@ pub enum InputContext {
     Uri,
     ConnectionName,
     CollectionName,
+    SearchCollections,
     None,
 }
 
@@ -110,6 +111,8 @@ pub struct AppState {
     pub show_help: bool,
     pub help_scroll: usize,
     pub redraw: bool,
+    pub collection_search_hits: Vec<(String, String, String)>,
+    pub collection_search_idx: usize,
 }
 
 impl Default for AppState {
@@ -152,6 +155,8 @@ impl Default for AppState {
             show_help: false,
             help_scroll: 0,
             redraw: false,
+            collection_search_hits: Vec::new(),
+            collection_search_idx: 0,
         }
     }
 }

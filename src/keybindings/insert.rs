@@ -1,6 +1,9 @@
+use crate::app::SelectableItem;
 use crate::app::{ActiveInputField, AppMode, AppState, InputContext};
+use crate::tui::events::goto_collection;
+use crate::utils::read_clipboard_string;
 use crate::utils::{load_connections, parse_connection_input, save_connection};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
     match key.code {
@@ -68,6 +71,36 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                         }
                     }
                 }
+                InputContext::SearchCollections => {
+                    let q = state.input_text.trim().to_lowercase();
+                    state.collection_search_hits.clear();
+                    state.collection_search_idx = 0;
+
+                    if !q.is_empty() {
+                        for item in &state.tree_items {
+                            if let SelectableItem::Collection { uri, db, name } = item {
+                                let hay = format!("{}/{}/{}", uri, db, name).to_lowercase();
+                                if hay.contains(&q) {
+                                    state.collection_search_hits.push((
+                                        uri.clone(),
+                                        db.clone(),
+                                        name.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    state.mode = AppMode::Normal;
+                    state.input_context = InputContext::None;
+                    state.input_text.clear();
+
+                    if let Some((uri, db, name)) = state.collection_search_hits.first().cloned() {
+                        goto_collection(state, &uri, &db, &name);
+                    } else {
+                        state.popup_message = Some(format!("🔎 Eşleşme yok: \"{}\"", q));
+                    }
+                }
 
                 InputContext::None => {}
             }
@@ -88,6 +121,36 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
             }
         }
 
+        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if let Ok(mut clip) = read_clipboard_string() {
+                if clip.ends_with('\n') {
+                    clip.pop();
+                }
+
+                let mut paste_at = |target: &mut String| {
+                    let pos = state.cursor_position.min(target.chars().count());
+                    let byte_pos = target
+                        .char_indices()
+                        .nth(pos)
+                        .map(|(i, _)| i)
+                        .unwrap_or(target.len());
+                    target.insert_str(byte_pos, &clip);
+                    state.cursor_position = pos + clip.chars().count();
+                };
+
+                if state.input_context != InputContext::None {
+                    paste_at(&mut state.input_text);
+                } else {
+                    match state.active_input {
+                        Some(ActiveInputField::Filter) => paste_at(&mut state.filter_text),
+                        Some(ActiveInputField::Sort) => paste_at(&mut state.sort_text),
+                        _ => {}
+                    }
+                }
+            } else {
+                state.popup_message = Some("❌ Pano okunamadı (Ctrl+V)".to_string());
+            }
+        }
         KeyCode::Char(c) => {
             if state.input_context != InputContext::None {
                 let mut chars: Vec<char> = state.input_text.chars().collect();

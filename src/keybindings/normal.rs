@@ -1,5 +1,6 @@
 use crate::app::{ActiveInputField, AppMode, AppState, FocusArea, InputContext, SelectableItem};
 use crate::keybindings::editor::open_in_external_editor;
+use crate::tui::events::goto_collection;
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
 use crate::utils::read_clipboard_string;
 use crate::widgets::help_popup::HELP_TEXT;
@@ -16,6 +17,7 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             state.input_text.clear();
             state.cursor_position = state.input_text.chars().count();
         }
+
         KeyCode::Char('?') => {
             state.show_help = !state.show_help;
             state.help_scroll = 0;
@@ -34,6 +36,12 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             }
         }
 
+        KeyCode::Char('/') if state.focus == FocusArea::Connections => {
+            state.mode = AppMode::Insert;
+            state.input_context = InputContext::SearchCollections;
+            state.input_text.clear();
+            state.cursor_position = 0;
+        }
         KeyCode::Tab => {
             if state.focus == FocusArea::FilterSortInputs {
                 state.active_input = match state.active_input {
@@ -279,11 +287,41 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
         KeyCode::Char('n') => {
             if state.focus == FocusArea::Documents {
                 state.next_field();
+            } else if state.focus == FocusArea::Connections
+                && !state.collection_search_hits.is_empty()
+            {
+                state.collection_search_idx =
+                    (state.collection_search_idx + 1) % state.collection_search_hits.len();
+
+                if let Some((uri, db, name)) = state
+                    .collection_search_hits
+                    .get(state.collection_search_idx)
+                    .cloned()
+                {
+                    goto_collection(state, &uri, &db, &name);
+                }
             }
         }
+
         KeyCode::Char('N') => {
             if state.focus == FocusArea::Documents {
                 state.previous_field();
+            } else if state.focus == FocusArea::Connections
+                && !state.collection_search_hits.is_empty()
+            {
+                if state.collection_search_idx == 0 {
+                    state.collection_search_idx = state.collection_search_hits.len() - 1;
+                } else {
+                    state.collection_search_idx -= 1;
+                }
+
+                if let Some((uri, db, name)) = state
+                    .collection_search_hits
+                    .get(state.collection_search_idx)
+                    .cloned()
+                {
+                    goto_collection(state, &uri, &db, &name);
+                }
             }
         }
 
@@ -355,6 +393,10 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             state.popup_message = None;
             state.popup_message_success = None;
             state.last_key = None;
+            state.input_text.clear();
+            state.cursor_position = 0;
+            state.collection_search_hits.clear();
+            state.collection_search_idx = 0;
         }
         KeyCode::Char('x') => {
             if let Some(item) = state.tree_items.get(state.selected_index) {
