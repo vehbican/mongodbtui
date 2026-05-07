@@ -1,5 +1,7 @@
 use crate::app::Connection;
 use arboard::Clipboard;
+#[cfg(target_os = "linux")]
+use arboard::SetExtLinux;
 use base64::Engine;
 use keyring::Entry;
 #[cfg(unix)]
@@ -8,6 +10,8 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
     path::PathBuf,
+    thread,
+    time::{Duration, Instant},
 };
 
 const KEYRING_SERVICE: &str = "mongodbtui";
@@ -249,20 +253,42 @@ pub fn read_clipboard_string() -> Result<String, String> {
         .map_err(|e| format!("Clipboard okunamadı: {e}"))
 }
 
+#[cfg(target_os = "linux")]
+fn write_system_clipboard_string(text: &str) -> Result<(), String> {
+    let text = text.to_string();
+    thread::Builder::new()
+        .name("mongodbtui-clipboard".to_string())
+        .spawn(move || {
+            if let Ok(mut cb) = Clipboard::new() {
+                let _ = cb
+                    .set()
+                    .wait_until(Instant::now() + Duration::from_secs(10))
+                    .text(text);
+            }
+        })
+        .map(|_| ())
+        .map_err(|e| format!("Clipboard thread başlatılamadı: {e}"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn write_system_clipboard_string(text: &str) -> Result<(), String> {
+    let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
+    cb.set_text(text)
+        .map_err(|e| format!("Clipboard yazılamadı: {e}"))
+}
+
 pub fn write_clipboard_string(text: &str) -> Result<(), String> {
+    let arboard_result = write_system_clipboard_string(text);
+    if arboard_result.is_ok() {
+        return Ok(());
+    }
+
     let encoded = base64::engine::general_purpose::STANDARD.encode(text);
     let osc52_result = write!(io::stdout(), "\x1b]52;c;{}\x07", encoded)
         .and_then(|_| io::stdout().flush())
         .map_err(|e| format!("Terminal clipboard yazılamadı: {e}"));
 
-    let arboard_result = Clipboard::new()
-        .map_err(|e| format!("Clipboard açılamadı: {e}"))
-        .and_then(|mut cb| {
-            cb.set_text(text)
-                .map_err(|e| format!("Clipboard yazılamadı: {e}"))
-        });
-
-    if arboard_result.is_ok() || osc52_result.is_ok() {
+    if osc52_result.is_ok() {
         Ok(())
     } else {
         Err(format!(
