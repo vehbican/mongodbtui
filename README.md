@@ -36,7 +36,14 @@ rustc --version
 cargo --version
 ```
 
-### Build & Install
+### Install
+#### Arch Linux (or Arch-based distros)
+```sh
+yay mongodbtui
+mongodbtui
+```
+
+#### Build from Source
 ```sh
 git clone git@github.com:vehbican/mongodbtui.git
 cd mongodbtui
