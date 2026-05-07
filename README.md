@@ -51,7 +51,7 @@ mongodbtui
 |------------|----------------------------------------|
 | `?`        | Toggle help popup                      |
 | `q`        | Quit the application                   |
-| `Esc`      | Dismiss popup / Exit insert mode       |
+| `Esc`      | Dismiss popup / clear search hits      |
 
 ### Focus Navigation
 | Key            | Action                           |
@@ -66,15 +66,20 @@ mongodbtui
 |-------------|----------------------------------------|
 | `j` / `↓`   | Move down                              |
 | `k` / `↑`   | Move up                                |
-| `Enter`     | Expand item / Load collection / Confirm |
+| `Enter`     | Connect / expand database / load collection |
 
 ### Connections & Collections
 | Key     | Action                                                                 |
 |---------|------------------------------------------------------------------------|
 | `o`     | Add new MongoDB connection                                             |
-| `e`     | Edit selected URI or collection name                                   |
+| `/`     | Search collections                                                     |
+| `n` / `N` | Next / previous collection search match                              |
+| `e`     | Edit selected connection or collection name                            |
 | `x`     | Export selected collection or database                                 |
-| `d` + `d` | Delete hovered item:<br>• In Filter: deletes matched documents<br>• In Documents: deletes selected document<br>• In Connections: deletes collection or database |
+| `i`     | Import collection into selected database                               |
+| `I`     | Import database into selected connection                               |
+| `f`     | Run shell script from file picker                                      |
+| `d` + `d` | Delete selected collection or database                              |
 
 ### Filter & Sort
 | Key       | Action                               |
@@ -82,12 +87,16 @@ mongodbtui
 | `a`       | Edit filter or sort input            |
 | `Tab`     | Toggle between filter and sort input |
 | `Enter`   | Apply filter & sort                  |
+| `p`       | Paste clipboard into active filter/sort input |
+| `d` + `d` | Delete documents matching current filter |
 
 ### Documents
 | Key       | Action                               |
 |-----------|--------------------------------------|
-| `n` / `N` | Navigate fields in document          |
-| `e`       | Open editor mode                     |
+| `n` / `N` | Next / previous field in selected document |
+| `e`       | Edit selected document in external editor |
+| `y`       | Copy selected field as filter fragment |
+| `d` + `d` | Delete selected document             |
 | `D`       | Delete selected field (except `_id`) |
 
 ### Insert Mode
@@ -97,27 +106,17 @@ mongodbtui
 | `Esc`       | Cancel editing       |
 | `← / →`     | Move cursor          |
 | `Backspace` | Delete character     |
+| `Ctrl+V`    | Paste clipboard      |
+| `Ctrl+Shift+V` | Paste from terminal |
 
 ### File Picker (Import / Export / Script)
 | Key       | Action                          |
 |-----------|---------------------------------|
-| `i`       | Import a collection (.json)     |
-| `I`       | Import a database (from folder) |
-| `f`       | Run a shell script (.sh)        |
 | `j / k`   | Navigate entries                |
 | `Space`   | Select/Deselect file            |
 | `Enter`   | Enter directory                 |
 | `c`       | Confirm action (import/run)     |
 | `Esc`     | Exit file picker                |
-
-### Editor Mode (Full-screen document editor)
-| Key         | Action                                |
-|--------------|---------------------------------------|
-| `Esc`        | Exit editor without saving            |
-| `Enter`      | Save document (must contain valid `_id`) |
-| `← / →`      | Move cursor left/right                |
-| `↑ / ↓`      | Move cursor up/down                   |
-| `Backspace`  | Delete character                      |
 
 ## Config Paths
 
