@@ -255,16 +255,15 @@ pub fn read_clipboard_string() -> Result<String, String> {
 
 #[cfg(target_os = "linux")]
 fn write_system_clipboard_string(text: &str) -> Result<(), String> {
+    let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
     let text = text.to_string();
     thread::Builder::new()
         .name("mongodbtui-clipboard".to_string())
         .spawn(move || {
-            if let Ok(mut cb) = Clipboard::new() {
-                let _ = cb
-                    .set()
-                    .wait_until(Instant::now() + Duration::from_secs(10))
-                    .text(text);
-            }
+            let _ = cb
+                .set()
+                .wait_until(Instant::now() + Duration::from_secs(10))
+                .text(text);
         })
         .map(|_| ())
         .map_err(|e| format!("Clipboard thread başlatılamadı: {e}"))
@@ -277,16 +276,26 @@ fn write_system_clipboard_string(text: &str) -> Result<(), String> {
         .map_err(|e| format!("Clipboard yazılamadı: {e}"))
 }
 
+fn write_terminal_clipboard_string(text: &str) -> Result<(), String> {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    write!(io::stdout(), "\x1b]52;c;{}\x07", encoded)
+        .and_then(|_| io::stdout().flush())
+        .map_err(|e| format!("Terminal clipboard yazılamadı: {e}"))
+}
+
 pub fn write_clipboard_string(text: &str) -> Result<(), String> {
+    if std::env::var_os("KITTY_WINDOW_ID").is_some()
+        || std::env::var("TERM").is_ok_and(|term| term.contains("kitty"))
+    {
+        return write_terminal_clipboard_string(text);
+    }
+
     let arboard_result = write_system_clipboard_string(text);
     if arboard_result.is_ok() {
         return Ok(());
     }
 
-    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
-    let osc52_result = write!(io::stdout(), "\x1b]52;c;{}\x07", encoded)
-        .and_then(|_| io::stdout().flush())
-        .map_err(|e| format!("Terminal clipboard yazılamadı: {e}"));
+    let osc52_result = write_terminal_clipboard_string(text);
 
     if osc52_result.is_ok() {
         Ok(())
