@@ -1,6 +1,6 @@
-use crate::app::AppState;
+use crate::app::{AppMode, AppState};
 use crate::app::{FocusArea, SelectableItem};
-use crate::keybindings::handle_by_mode;
+use crate::keybindings::{handle_by_mode, insert};
 use crate::tui::fpicker_events;
 use crossterm::event::KeyEvent;
 
@@ -31,6 +31,15 @@ pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
 
     handle_by_mode(key, state).await
 }
+
+pub fn handle_paste_event(text: String, state: &mut AppState) {
+    if state.file_picker.is_some() || state.mode != AppMode::Insert {
+        return;
+    }
+
+    insert::handle_paste_text(text, state);
+}
+
 pub fn goto_collection(state: &mut AppState, uri: &str, db: &str, name: &str) {
     state.expanded_uris.insert(uri.to_string());
     state.expanded_dbs.insert((uri.to_string(), db.to_string()));

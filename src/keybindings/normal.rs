@@ -2,10 +2,18 @@ use crate::app::{ActiveInputField, AppMode, AppState, FocusArea, InputContext, S
 use crate::keybindings::editor::open_in_external_editor;
 use crate::tui::events::{goto_collection, inner_end_pos};
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
-use crate::utils::read_clipboard_string;
+use crate::utils::{read_clipboard_string, write_clipboard_string};
 use crate::widgets::help_popup::HELP_TEXT;
+use bson::Bson;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
+
+fn filter_value_json(value: &Bson) -> Result<String, serde_json::Error> {
+    match value {
+        Bson::ObjectId(oid) => Ok(format!("{{\"$oid\":\"{}\"}}", oid)),
+        _ => serde_json::to_string(value),
+    }
+}
 
 pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
     match key.code {
@@ -342,10 +350,11 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     match item {
                         SelectableItem::Uri { uri, .. } => {
                             if let Some(conn) = state.connections.iter().find(|c| &c.uri == uri) {
+                                let uri = crate::utils::resolve_connection_uri(conn)
+                                    .unwrap_or_else(|_| conn.uri.clone());
                                 state.mode = AppMode::Insert;
                                 state.input_context = InputContext::ConnectionName;
-                                state.input_text =
-                                    format!("{};{};{}", conn.id, conn.uri, conn.name);
+                                state.input_text = format!("{};{};{}", conn.id, uri, conn.name);
                                 state.cursor_position = state.input_text.chars().count();
                             }
                         }
@@ -548,6 +557,30 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     }
                     Err(e) => {
                         state.popup_message = Some(format!("❌ Yapıştırma başarısız: {e}"));
+                    }
+                }
+            }
+        }
+
+        KeyCode::Char('y') => {
+            if state.focus == FocusArea::Documents {
+                if let Some(doc) = state.current_documents.get(state.selected_doc_index) {
+                    if let Some((field, value)) = doc.iter().nth(state.selected_field_index) {
+                        let field_json = serde_json::to_string(field)
+                            .unwrap_or_else(|_| format!("\"{}\"", field.replace('"', "\\\"")));
+
+                        match filter_value_json(value) {
+                            Ok(value_json) => {
+                                let filter_fragment = format!("{}:{}", field_json, value_json);
+                                if let Err(e) = write_clipboard_string(&filter_fragment) {
+                                    state.popup_message =
+                                        Some(format!("❌ Kopyalama başarısız: {e}"));
+                                }
+                            }
+                            Err(e) => {
+                                state.popup_message = Some(format!("❌ Field kopyalanamadı: {e}"));
+                            }
+                        }
                     }
                 }
             }

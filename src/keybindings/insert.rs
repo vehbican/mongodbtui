@@ -5,17 +5,50 @@ use crate::utils::read_clipboard_string;
 use crate::utils::{load_connections, parse_connection_input, save_connection};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+pub fn handle_paste_text(mut text: String, state: &mut AppState) {
+    if text.ends_with('\n') {
+        text.pop();
+    }
+
+    let mut paste_at = |target: &mut String| {
+        let pos = state.cursor_position.min(target.chars().count());
+        let byte_pos = target
+            .char_indices()
+            .nth(pos)
+            .map(|(i, _)| i)
+            .unwrap_or(target.len());
+        target.insert_str(byte_pos, &text);
+        state.cursor_position = pos + text.chars().count();
+    };
+
+    if state.input_context != InputContext::None {
+        paste_at(&mut state.input_text);
+    } else {
+        match state.active_input {
+            Some(ActiveInputField::Filter) => paste_at(&mut state.filter_text),
+            Some(ActiveInputField::Sort) => paste_at(&mut state.sort_text),
+            _ => {}
+        }
+    }
+}
+
 pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
     match key.code {
         KeyCode::Enter => {
             match state.input_context {
                 InputContext::Uri => {
                     if let Some((uri, name)) = parse_connection_input(&state.input_text) {
-                        if save_connection(&uri, &name).is_ok() {
-                            state.connections = load_connections().unwrap_or_default();
-                            state.rebuild_tree_items();
-                            state.popup_message = None;
-                            state.popup_message_success = None;
+                        match save_connection(&uri, &name) {
+                            Ok(()) => {
+                                state.connections = load_connections().unwrap_or_default();
+                                state.rebuild_tree_items();
+                                state.popup_message = None;
+                                state.popup_message_success = None;
+                            }
+                            Err(e) => {
+                                state.popup_message = Some(e.to_string());
+                                return false;
+                            }
                         }
                     } else {
                         state.popup_message =
@@ -121,32 +154,12 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
             }
         }
 
-        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if let Ok(mut clip) = read_clipboard_string() {
-                if clip.ends_with('\n') {
-                    clip.pop();
-                }
-
-                let mut paste_at = |target: &mut String| {
-                    let pos = state.cursor_position.min(target.chars().count());
-                    let byte_pos = target
-                        .char_indices()
-                        .nth(pos)
-                        .map(|(i, _)| i)
-                        .unwrap_or(target.len());
-                    target.insert_str(byte_pos, &clip);
-                    state.cursor_position = pos + clip.chars().count();
-                };
-
-                if state.input_context != InputContext::None {
-                    paste_at(&mut state.input_text);
-                } else {
-                    match state.active_input {
-                        Some(ActiveInputField::Filter) => paste_at(&mut state.filter_text),
-                        Some(ActiveInputField::Sort) => paste_at(&mut state.sort_text),
-                        _ => {}
-                    }
-                }
+        KeyCode::Char('v')
+            if key.modifiers.contains(KeyModifiers::CONTROL)
+                && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
+            if let Ok(clip) = read_clipboard_string() {
+                handle_paste_text(clip, state);
             } else {
                 state.popup_message = Some("❌ Pano okunamadı (Ctrl+V)".to_string());
             }

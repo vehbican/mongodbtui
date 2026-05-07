@@ -30,14 +30,38 @@ pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
 
     state.update_graphemes();
 
+    let inner_width = input_area.width.saturating_sub(2) as usize;
+    let cursor_position = state.cursor_position.min(state.input_graphemes.len());
     let cursor_visual_offset = state
         .input_graphemes
         .iter()
-        .take(state.cursor_position)
+        .take(cursor_position)
         .map(|g| g.width())
         .sum::<usize>();
 
-    let input = Paragraph::new(Line::from(Span::raw(&state.input_text)))
+    let scroll_offset = cursor_visual_offset.saturating_sub(inner_width.saturating_sub(1));
+    let mut skipped_width = 0;
+    let mut visible_width = 0;
+    let mut visible_input = String::new();
+
+    for grapheme in &state.input_graphemes {
+        let width = grapheme.width();
+        if skipped_width + width <= scroll_offset {
+            skipped_width += width;
+            continue;
+        }
+
+        if visible_width + width > inner_width {
+            break;
+        }
+
+        visible_width += width;
+        visible_input.push_str(grapheme);
+    }
+
+    let cursor_x_offset = cursor_visual_offset.saturating_sub(skipped_width);
+
+    let input = Paragraph::new(Line::from(Span::raw(visible_input)))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -50,8 +74,5 @@ pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
     f.render_widget(Clear, input_area);
     f.render_widget(input, input_area);
 
-    f.set_cursor_position((
-        input_area.x + cursor_visual_offset as u16 + 1,
-        input_area.y + 1,
-    ));
+    f.set_cursor_position((input_area.x + cursor_x_offset as u16 + 1, input_area.y + 1));
 }

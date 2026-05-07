@@ -2,7 +2,10 @@ use crate::app::{AppMode, InputContext};
 use app::AppState;
 use crossterm::{
     cursor::SetCursorStyle,
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -14,7 +17,7 @@ use ratatui::{
     widgets::Block,
 };
 use std::io;
-use tui::events::handle_key_event;
+use tui::events::{handle_key_event, handle_paste_event};
 use tui::input::render_input;
 use widgets::{
     connection_panel::render_connections,
@@ -45,7 +48,12 @@ fn apply_cursor_style(state: &AppState) {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -116,11 +124,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key_event) = event::read()? {
-                let should_exit = handle_key_event(key_event, &mut state).await;
-                if should_exit {
-                    break;
+            match event::read()? {
+                Event::Key(key_event) => {
+                    let should_exit = handle_key_event(key_event, &mut state).await;
+                    if should_exit {
+                        break;
+                    }
                 }
+                Event::Paste(text) => handle_paste_event(text, &mut state),
+                _ => {}
             }
         }
     }
@@ -131,7 +143,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        DisableBracketedPaste
     )?;
     terminal.show_cursor()?;
 

@@ -1,10 +1,17 @@
 use crate::app::Connection;
 use arboard::Clipboard;
+use base64::Engine;
+use keyring::Entry;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::{
     fs::{File, OpenOptions},
-    io::{BufRead, BufReader, Write},
+    io::{self, BufRead, BufReader, Write},
     path::PathBuf,
 };
+
+const KEYRING_SERVICE: &str = "mongodbtui";
+const PASSWORD_SENTINEL: &str = "__MONGODBTUI_KEYRING__";
 
 fn get_config_file_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -13,6 +20,80 @@ fn get_config_file_path() -> PathBuf {
     path.push("connections.csv");
     path
 }
+
+fn keyring_key(id: usize) -> String {
+    format!("connection-{id}")
+}
+
+fn keyring_entry(id: usize) -> io::Result<Entry> {
+    Entry::new(KEYRING_SERVICE, &keyring_key(id)).map_err(|e| io::Error::other(e.to_string()))
+}
+
+fn redact_uri_password(uri: &str) -> Option<(String, String)> {
+    let scheme_end = uri.find("://")? + 3;
+    let rest = &uri[scheme_end..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let at = authority.rfind('@')?;
+    let userinfo = &authority[..at];
+    let password_start = userinfo.find(':')? + 1;
+
+    if userinfo[password_start..].is_empty() {
+        return None;
+    }
+
+    let password_abs_start = scheme_end + password_start;
+    let password_abs_end = scheme_end + at;
+    let mut redacted = String::new();
+    redacted.push_str(&uri[..password_abs_start]);
+    redacted.push_str(PASSWORD_SENTINEL);
+    redacted.push_str(&uri[password_abs_end..]);
+
+    Some((
+        redacted,
+        uri[password_abs_start..password_abs_end].to_string(),
+    ))
+}
+
+fn restore_uri_password(uri: &str, id: usize) -> io::Result<String> {
+    if !uri.contains(PASSWORD_SENTINEL) {
+        return Ok(uri.to_string());
+    }
+
+    let password = keyring_entry(id)?
+        .get_password()
+        .map_err(|e| io::Error::other(format!("Keyring password okunamadı: {e}")))?;
+    Ok(uri.replace(PASSWORD_SENTINEL, &password))
+}
+
+fn secure_connection_for_storage(conn: &Connection) -> io::Result<Connection> {
+    if conn.uri.contains(PASSWORD_SENTINEL) {
+        return Ok(Connection {
+            id: conn.id,
+            uri: conn.uri.clone(),
+            name: conn.name.clone(),
+        });
+    }
+
+    let Some((redacted_uri, password)) = redact_uri_password(&conn.uri) else {
+        return Ok(Connection {
+            id: conn.id,
+            uri: conn.uri.clone(),
+            name: conn.name.clone(),
+        });
+    };
+
+    keyring_entry(conn.id)?
+        .set_password(&password)
+        .map_err(|e| io::Error::other(format!("Keyring password yazılamadı: {e}")))?;
+
+    Ok(Connection {
+        id: conn.id,
+        uri: redacted_uri,
+        name: conn.name.clone(),
+    })
+}
+
 pub fn get_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -62,8 +143,13 @@ pub fn update_connection(input: &str) -> std::io::Result<()> {
 
 pub fn overwrite_connections(conns: &[Connection]) -> std::io::Result<()> {
     let path = get_config_file_path();
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    let mut options = OpenOptions::new();
+    options.create(true).write(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path)?;
     for conn in conns {
+        let conn = secure_connection_for_storage(conn)?;
         writeln!(file, "{};{};{}", conn.id, conn.uri, conn.name)?;
     }
     Ok(())
@@ -88,10 +174,35 @@ pub fn save_connection(uri: &str, name: &str) -> std::io::Result<()> {
     let new_id = max_id + 1;
 
     let path = get_config_file_path();
-    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path)?;
 
-    writeln!(file, "{};{};{}", new_id, uri, name)?;
+    let conn = secure_connection_for_storage(&Connection {
+        id: new_id,
+        uri: uri.to_string(),
+        name: name.to_string(),
+    })?;
+
+    writeln!(file, "{};{};{}", conn.id, conn.uri, conn.name)?;
     Ok(())
+}
+
+pub fn resolve_connection_uri(conn: &Connection) -> std::io::Result<String> {
+    restore_uri_password(&conn.uri, conn.id)
+}
+
+pub fn resolve_connection_uri_by_stored_uri(
+    uri: &str,
+    conns: &[Connection],
+) -> std::io::Result<String> {
+    if let Some(conn) = conns.iter().find(|conn| conn.uri == uri) {
+        resolve_connection_uri(conn)
+    } else {
+        Ok(uri.to_string())
+    }
 }
 pub fn parse_connection_input(input: &str) -> Option<(String, String)> {
     let parts: Vec<&str> = input.trim().split(';').map(|s| s.trim()).collect();
@@ -136,4 +247,28 @@ pub fn read_clipboard_string() -> Result<String, String> {
     let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
     cb.get_text()
         .map_err(|e| format!("Clipboard okunamadı: {e}"))
+}
+
+pub fn write_clipboard_string(text: &str) -> Result<(), String> {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    let osc52_result = write!(io::stdout(), "\x1b]52;c;{}\x07", encoded)
+        .and_then(|_| io::stdout().flush())
+        .map_err(|e| format!("Terminal clipboard yazılamadı: {e}"));
+
+    let arboard_result = Clipboard::new()
+        .map_err(|e| format!("Clipboard açılamadı: {e}"))
+        .and_then(|mut cb| {
+            cb.set_text(text)
+                .map_err(|e| format!("Clipboard yazılamadı: {e}"))
+        });
+
+    if arboard_result.is_ok() || osc52_result.is_ok() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{}; {}",
+            arboard_result.unwrap_err(),
+            osc52_result.unwrap_err()
+        ))
+    }
 }

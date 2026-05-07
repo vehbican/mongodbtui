@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::db;
+use crate::utils::resolve_connection_uri_by_stored_uri;
 use std::string::ToString;
 
 pub async fn handle_connection(state: &mut AppState, uri: &str) {
@@ -7,7 +8,15 @@ pub async fn handle_connection(state: &mut AppState, uri: &str) {
     state.mongo_client = None;
     state.connected_uri = None;
 
-    match db::client::connect_to_uri(uri).await {
+    let resolved_uri = match resolve_connection_uri_by_stored_uri(uri, &state.connections) {
+        Ok(uri) => uri,
+        Err(err) => {
+            state.popup_message = Some(format!("❌ Connection password unavailable: {}", err));
+            return;
+        }
+    };
+
+    match db::client::connect_to_uri(&resolved_uri).await {
         Ok(client) => {
             state.mongo_client = Some(client.clone());
             state.connected_uri = Some(uri.to_string());
