@@ -34,9 +34,25 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
 
         KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
             match (c, &state.focus) {
-                ('l', FocusArea::Connections) => state.focus = FocusArea::FilterSortInputs,
+                ('l', FocusArea::Connections) => {
+                    state.focus = FocusArea::FilterSortInputs;
+                    state.active_input.get_or_insert(ActiveInputField::Filter);
+                    state.cursor_position = match state.active_input {
+                        Some(ActiveInputField::Filter) => inner_end_pos(&state.filter_text),
+                        Some(ActiveInputField::Sort) => inner_end_pos(&state.sort_text),
+                        _ => 0,
+                    };
+                }
                 ('j', FocusArea::FilterSortInputs) => state.focus = FocusArea::Documents,
-                ('k', FocusArea::Documents) => state.focus = FocusArea::FilterSortInputs,
+                ('k', FocusArea::Documents) => {
+                    state.focus = FocusArea::FilterSortInputs;
+                    state.active_input.get_or_insert(ActiveInputField::Filter);
+                    state.cursor_position = match state.active_input {
+                        Some(ActiveInputField::Filter) => inner_end_pos(&state.filter_text),
+                        Some(ActiveInputField::Sort) => inner_end_pos(&state.sort_text),
+                        _ => 0,
+                    };
+                }
                 ('h', FocusArea::Documents) | ('h', FocusArea::FilterSortInputs) => {
                     state.focus = FocusArea::Connections
                 }
