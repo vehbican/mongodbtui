@@ -2,6 +2,8 @@
 
 A terminal-based TUI application for browsing and managing your MongoDB collections and databases. It supports JSON import/export, document editing, collection management, and script execution.
 
+![MongoDB TUI screenshot](assets/mongodbtui.png)
+
 ## Prerequisities
 
 Before installaion make sure following tools are installed : 
