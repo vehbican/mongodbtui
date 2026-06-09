@@ -66,7 +66,7 @@ fn restore_uri_password(uri: &str, id: usize) -> io::Result<String> {
 
     let password = keyring_entry(id)?
         .get_password()
-        .map_err(|e| io::Error::other(format!("Keyring password okunamadı: {e}")))?;
+        .map_err(|e| io::Error::other(format!("Could not read keyring password: {e}")))?;
     Ok(uri.replace(PASSWORD_SENTINEL, &password))
 }
 
@@ -89,7 +89,7 @@ fn secure_connection_for_storage(conn: &Connection) -> io::Result<Connection> {
 
     keyring_entry(conn.id)?
         .set_password(&password)
-        .map_err(|e| io::Error::other(format!("Keyring password yazılamadı: {e}")))?;
+        .map_err(|e| io::Error::other(format!("Could not write keyring password: {e}")))?;
 
     Ok(Connection {
         id: conn.id,
@@ -248,14 +248,14 @@ pub fn load_connections() -> std::io::Result<Vec<Connection>> {
     }
 }
 pub fn read_clipboard_string() -> Result<String, String> {
-    let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
+    let mut cb = Clipboard::new().map_err(|e| format!("Could not open clipboard: {e}"))?;
     cb.get_text()
-        .map_err(|e| format!("Clipboard okunamadı: {e}"))
+        .map_err(|e| format!("Could not read clipboard: {e}"))
 }
 
 #[cfg(target_os = "linux")]
 fn write_system_clipboard_string(text: &str) -> Result<(), String> {
-    let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
+    let mut cb = Clipboard::new().map_err(|e| format!("Could not open clipboard: {e}"))?;
     let text = text.to_string();
     thread::Builder::new()
         .name("mongodbtui-clipboard".to_string())
@@ -266,21 +266,21 @@ fn write_system_clipboard_string(text: &str) -> Result<(), String> {
                 .text(text);
         })
         .map(|_| ())
-        .map_err(|e| format!("Clipboard thread başlatılamadı: {e}"))
+        .map_err(|e| format!("Could not start clipboard thread: {e}"))
 }
 
 #[cfg(not(target_os = "linux"))]
 fn write_system_clipboard_string(text: &str) -> Result<(), String> {
-    let mut cb = Clipboard::new().map_err(|e| format!("Clipboard açılamadı: {e}"))?;
+    let mut cb = Clipboard::new().map_err(|e| format!("Could not open clipboard: {e}"))?;
     cb.set_text(text)
-        .map_err(|e| format!("Clipboard yazılamadı: {e}"))
+        .map_err(|e| format!("Could not write clipboard: {e}"))
 }
 
 fn write_terminal_clipboard_string(text: &str) -> Result<(), String> {
     let encoded = base64::engine::general_purpose::STANDARD.encode(text);
     write!(io::stdout(), "\x1b]52;c;{}\x07", encoded)
         .and_then(|_| io::stdout().flush())
-        .map_err(|e| format!("Terminal clipboard yazılamadı: {e}"))
+        .map_err(|e| format!("Could not write terminal clipboard: {e}"))
 }
 
 pub fn write_clipboard_string(text: &str) -> Result<(), String> {

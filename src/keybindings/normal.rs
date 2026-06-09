@@ -572,7 +572,7 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                         }
                     }
                     Err(e) => {
-                        state.popup_message = Some(format!("❌ Yapıştırma başarısız: {e}"));
+                        state.popup_message = Some(format!("❌ Paste failed: {e}"));
                     }
                 }
             }
@@ -589,12 +589,11 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                             Ok(value_json) => {
                                 let filter_fragment = format!("{}:{}", field_json, value_json);
                                 if let Err(e) = write_clipboard_string(&filter_fragment) {
-                                    state.popup_message =
-                                        Some(format!("❌ Kopyalama başarısız: {e}"));
+                                    state.popup_message = Some(format!("❌ Copy failed: {e}"));
                                 }
                             }
                             Err(e) => {
-                                state.popup_message = Some(format!("❌ Field kopyalanamadı: {e}"));
+                                state.popup_message = Some(format!("❌ Could not copy field: {e}"));
                             }
                         }
                     }

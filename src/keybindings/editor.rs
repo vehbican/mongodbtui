@@ -15,23 +15,24 @@ pub async fn open_in_external_editor(state: &mut AppState) -> Result<(), String>
         .selected_collection
         .as_ref()
         .map(|(_uri, db, col)| (db.clone(), col.clone()))
-        .ok_or_else(|| "Herhangi bir koleksiyon seçili değil.".to_string())?;
+        .ok_or_else(|| "No collection selected.".to_string())?;
 
     let client = state
         .mongo_client
         .as_ref()
-        .ok_or_else(|| "MongoDB bağlantısı yok.".to_string())?;
+        .ok_or_else(|| "No MongoDB connection.".to_string())?;
 
     let original_doc: &Document = state
         .current_documents
         .get(state.selected_doc_index)
-        .ok_or_else(|| "Herhangi bir doküman seçili değil.".to_string())?;
+        .ok_or_else(|| "No document selected.".to_string())?;
+    let original_id = original_doc.get("_id").cloned();
 
     let initial = serde_json::to_string_pretty(original_doc)
-        .map_err(|e| format!("Doküman JSON'a çevrilemedi: {e}"))?;
+        .map_err(|e| format!("Document could not be converted to JSON: {e}"))?;
 
-    let _guard = TuiSuspendGuard::suspend().map_err(|e| format!("TUI askıya alınamadı: {e}"))?;
-    let edited = edit(&initial).map_err(|e| format!("Dış editör açılamadı: {e}"))?;
+    let _guard = TuiSuspendGuard::suspend().map_err(|e| format!("Could not suspend TUI: {e}"))?;
+    let edited = edit(&initial).map_err(|e| format!("Could not open external editor: {e}"))?;
 
     if edited.trim() == initial.trim() {
         state.redraw = true;
@@ -39,23 +40,25 @@ pub async fn open_in_external_editor(state: &mut AppState) -> Result<(), String>
     }
 
     if let Err(e) = apply_edited_json(client, &db_name, &col_name, original_doc, &edited).await {
-        state.popup_message = Some(format!("❌ DB güncellemesi başarısız: {e}"));
+        state.popup_message = Some(format!("❌ Database update failed: {e}"));
         state.redraw = true;
         return Err(format!("{e}"));
     }
 
     match serde_json::from_str::<Document>(&edited) {
-        Ok(new_doc) => {
+        Ok(mut new_doc) => {
+            if let Some(id) = original_id {
+                new_doc.insert("_id", id);
+            }
             if let Some(slot) = state.current_documents.get_mut(state.selected_doc_index) {
                 *slot = new_doc;
             }
             state.popup_message_success =
-                Some("Dış editör değişiklikleri kaydedildi ve DB güncellendi ✅".into());
+                Some("External editor changes saved and database updated ✅".into());
         }
         Err(_) => {
-            state.popup_message_success = Some(
-                "DB güncellendi ✅ (yerel parse hatası; görünüm yakında güncellenecek)".into(),
-            );
+            state.popup_message_success =
+                Some("Database updated ✅ (local parse failed; the view will refresh soon)".into());
         }
     }
 

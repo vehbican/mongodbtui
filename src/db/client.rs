@@ -116,11 +116,7 @@ pub async fn apply_edited_document(
     original: &Document,
     edited: &Document,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let id_bson = edited.get("_id").ok_or("_id alanı yok")?;
-    let oid = match id_bson {
-        Bson::ObjectId(oid) => *oid,
-        _ => return Err("_id bir ObjectId olmalı".into()),
-    };
+    let id_bson = original.get("_id").ok_or("_id field is missing")?.clone();
 
     let (mut set_doc, unset_doc) = diff_docs_deep(original, edited);
 
@@ -140,7 +136,7 @@ pub async fn apply_edited_document(
 
     let db = client.database(db_name);
     let coll = db.collection::<Document>(collection_name);
-    coll.update_one(doc! { "_id": oid }, update)
+    coll.update_one(doc! { "_id": id_bson }, update)
         .await
         .map(|_| ())
         .map_err(Into::into)
@@ -224,7 +220,7 @@ pub async fn apply_edited_json(
             let v: serde_json::Value = serde_json::from_str(edited_json)?;
             match bson::to_bson(&v)? {
                 Bson::Document(d) => d,
-                _ => return Err("JSON bir obje ({}) olmalı".into()),
+                _ => return Err("JSON must be an object ({})".into()),
             }
         }
     };

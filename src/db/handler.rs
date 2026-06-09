@@ -83,6 +83,8 @@ pub async fn handle_collection_listing(state: &mut AppState, db_uri: &str, db_na
 
 pub async fn fetch_and_update_documents(state: &mut AppState, uri: &str, db: &str, name: &str) {
     if let Some(client) = &state.mongo_client {
+        let is_initial_load = state.document_skip == 0;
+
         match db::client::count_documents(client, db, name, &state.filter_text).await {
             Ok(count) => {
                 state
@@ -108,7 +110,7 @@ pub async fn fetch_and_update_documents(state: &mut AppState, uri: &str, db: &st
         {
             Ok(new_docs) => {
                 let fetched = new_docs.len();
-                if !state.filter_text.trim().is_empty() {
+                if is_initial_load {
                     state.selected_doc_index = 0;
                     state.doc_scroll_offset = 0;
                 }

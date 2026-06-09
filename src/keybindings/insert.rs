@@ -134,7 +134,7 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                     if let Some((uri, db, name)) = state.collection_search_hits.first().cloned() {
                         goto_collection(state, &uri, &db, &name);
                     } else {
-                        state.popup_message = Some(format!("🔎 Eşleşme yok: \"{}\"", q));
+                        state.popup_message = Some(format!("🔎 No match: \"{}\"", q));
                     }
                 }
 
@@ -171,7 +171,7 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
             if let Ok(clip) = read_clipboard_string() {
                 handle_paste_text(clip, state);
             } else {
-                state.popup_message = Some("❌ Pano okunamadı (Ctrl+V)".to_string());
+                state.popup_message = Some("❌ Could not read clipboard (Ctrl+V)".to_string());
             }
         }
         KeyCode::Char(c) => {
