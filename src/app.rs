@@ -15,7 +15,6 @@ pub enum AppMode {
 pub enum FocusArea {
     Connections,
     Documents,
-    FilterSortInputs,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActiveInputField {
@@ -104,6 +103,7 @@ pub struct AppState {
     pub active_input: Option<ActiveInputField>,
     pub document_counts: HashMap<(String, String, String), u64>,
     pub selected_field_index: usize,
+    pub expanded_field: Option<(usize, usize)>,
     pub cursor_position: usize,
     pub input_graphemes: Vec<String>,
     pub last_key: Option<KeyEvent>,
@@ -148,6 +148,7 @@ impl Default for AppState {
             active_input: Some(ActiveInputField::Filter),
             document_counts: HashMap::new(),
             selected_field_index: 0,
+            expanded_field: None,
             cursor_position: 1,
             input_graphemes: Vec::new(),
             last_key: None,
@@ -188,6 +189,16 @@ impl AppState {
         self.selected_field_index = 0;
         self.selected_doc_index = 0;
         self.doc_scroll_offset = 0;
+        self.expanded_field = None;
+    }
+
+    pub fn toggle_selected_field_expansion(&mut self) {
+        let selected = (self.selected_doc_index, self.selected_field_index);
+        self.expanded_field = if self.expanded_field == Some(selected) {
+            None
+        } else {
+            Some(selected)
+        };
     }
 
     pub fn rebuild_tree_items(&mut self) {
@@ -256,6 +267,7 @@ impl AppState {
                 Ok(docs) => {
                     self.current_documents = docs;
                     self.document_skip = self.current_documents.len();
+                    self.expanded_field = None;
                 }
                 Err(e) => {
                     self.popup_message = Some(format!(

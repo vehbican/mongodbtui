@@ -2,7 +2,7 @@ use crate::app::{ActiveInputField, AppMode, AppState, FocusArea, InputContext, S
 use crate::keybindings::editor::open_in_external_editor;
 use crate::tui::events::{goto_collection, inner_end_pos};
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
-use crate::utils::{read_clipboard_string, write_clipboard_string};
+use crate::utils::write_clipboard_string;
 use crate::widgets::help_popup::HELP_TEXT;
 use bson::Bson;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -35,27 +35,10 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
         KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
             match (c, &state.focus) {
                 ('l', FocusArea::Connections) => {
-                    state.focus = FocusArea::FilterSortInputs;
-                    state.active_input.get_or_insert(ActiveInputField::Filter);
-                    state.cursor_position = match state.active_input {
-                        Some(ActiveInputField::Filter) => inner_end_pos(&state.filter_text),
-                        Some(ActiveInputField::Sort) => inner_end_pos(&state.sort_text),
-                        _ => 0,
-                    };
+                    state.focus = FocusArea::Documents;
                 }
-                ('j', FocusArea::FilterSortInputs) => state.focus = FocusArea::Documents,
-                ('k', FocusArea::Documents) => {
-                    state.focus = FocusArea::FilterSortInputs;
-                    state.active_input.get_or_insert(ActiveInputField::Filter);
-                    state.cursor_position = match state.active_input {
-                        Some(ActiveInputField::Filter) => inner_end_pos(&state.filter_text),
-                        Some(ActiveInputField::Sort) => inner_end_pos(&state.sort_text),
-                        _ => 0,
-                    };
-                }
-                ('h', FocusArea::Documents) | ('h', FocusArea::FilterSortInputs) => {
-                    state.focus = FocusArea::Connections
-                }
+                ('k', FocusArea::Documents) => state.focus = FocusArea::Connections,
+                ('h', FocusArea::Documents) => state.focus = FocusArea::Connections,
                 _ => {}
             }
         }
@@ -66,21 +49,18 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             state.input_text.clear();
             state.cursor_position = 0;
         }
-        KeyCode::Tab => {
-            if state.focus == FocusArea::FilterSortInputs {
-                state.active_input = match state.active_input {
-                    Some(ActiveInputField::Filter) => Some(ActiveInputField::Sort),
-                    Some(ActiveInputField::Sort) => Some(ActiveInputField::Filter),
-                    _ => Some(ActiveInputField::Filter),
-                };
-                state.cursor_position = match state.active_input {
-                    Some(ActiveInputField::Filter) => inner_end_pos(&state.filter_text),
-                    Some(ActiveInputField::Sort) => inner_end_pos(&state.sort_text),
-                    _ => 0,
-                };
-            }
+        KeyCode::Char('/') if state.focus == FocusArea::Documents => {
+            state.mode = AppMode::Insert;
+            state.input_context = InputContext::None;
+            state.active_input = Some(ActiveInputField::Filter);
+            state.cursor_position = inner_end_pos(&state.filter_text);
         }
-
+        KeyCode::Char('s') if state.focus == FocusArea::Documents => {
+            state.mode = AppMode::Insert;
+            state.input_context = InputContext::None;
+            state.active_input = Some(ActiveInputField::Sort);
+            state.cursor_position = inner_end_pos(&state.sort_text);
+        }
         KeyCode::Char('i') => {
             let Some(SelectableItem::Database {
                 uri: _,
@@ -228,32 +208,6 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                             }
                         }
                     }
-                    FocusArea::FilterSortInputs => {
-                        if let Some((_, db, col)) = &state.selected_collection {
-                            if let Some(client) = &state.mongo_client {
-                                match crate::db::client::delete_documents_by_filter(
-                                    client,
-                                    db,
-                                    col,
-                                    &state.filter_text,
-                                )
-                                .await
-                                {
-                                    Ok(_) => {
-                                        state.reload_documents_for_selected_collection().await;
-                                        state.popup_message_success =
-                                            Some("✅ Filtered documents deleted".to_string());
-                                    }
-                                    Err(e) => {
-                                        state.popup_message = Some(format!(
-                                            "❌ Failed to delete filtered documents: {}",
-                                            e
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
                 state.last_key = None;
             } else {
@@ -388,32 +342,6 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             }
         },
 
-        KeyCode::Char('a') => {
-            if state.focus == FocusArea::FilterSortInputs {
-                state.mode = AppMode::Insert;
-                state.active_input = Some(
-                    state
-                        .active_input
-                        .as_ref()
-                        .copied()
-                        .unwrap_or(ActiveInputField::Filter),
-                );
-
-                state.input_context = InputContext::None;
-                match state.active_input {
-                    Some(ActiveInputField::Filter) => {
-                        state.input_text = state.filter_text.clone();
-                        state.cursor_position = state.input_text.chars().count();
-                    }
-                    Some(ActiveInputField::Sort) => {
-                        state.input_text = state.sort_text.clone();
-                        state.cursor_position = state.input_text.chars().count();
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         KeyCode::Esc => {
             state.popup_message = None;
             state.popup_message_success = None;
@@ -518,7 +446,6 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
@@ -541,43 +468,9 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
-        KeyCode::Char('p') => {
-            if state.focus == FocusArea::FilterSortInputs {
-                match read_clipboard_string() {
-                    Ok(mut clip) => {
-                        if clip.ends_with('\n') {
-                            clip.pop();
-                        }
-                        match state.active_input.unwrap_or(ActiveInputField::Filter) {
-                            ActiveInputField::Filter => {
-                                if state.filter_text.is_empty() {
-                                    state.filter_text = clip;
-                                } else {
-                                    state.filter_text.push_str(&clip);
-                                }
-                                state.cursor_position = state.filter_text.chars().count();
-                            }
-                            ActiveInputField::Sort => {
-                                if state.sort_text.is_empty() {
-                                    state.sort_text = clip;
-                                } else {
-                                    state.sort_text.push_str(&clip);
-                                }
-                                state.cursor_position = state.sort_text.chars().count();
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        state.popup_message = Some(format!("❌ Paste failed: {e}"));
-                    }
-                }
-            }
-        }
-
         KeyCode::Char('y') => {
             if state.focus == FocusArea::Documents {
                 if let Some(doc) = state.current_documents.get(state.selected_doc_index) {
@@ -602,11 +495,13 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
         }
 
         KeyCode::Enter => match state.focus {
-            FocusArea::FilterSortInputs => {
-                if let Some((uri, db, name)) = &state.selected_collection {
-                    state.current_documents.clear();
-                    state.document_skip = 0;
-                    state.fetch_collection_data = Some((uri.clone(), db.clone(), name.clone()));
+            FocusArea::Documents => {
+                if state
+                    .current_documents
+                    .get(state.selected_doc_index)
+                    .is_some()
+                {
+                    state.toggle_selected_field_expansion();
                 }
             }
 
@@ -660,8 +555,6 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     }
                 }
             }
-
-            _ => {}
         },
         _ => {}
     }

@@ -113,6 +113,7 @@ pub async fn fetch_and_update_documents(state: &mut AppState, uri: &str, db: &st
                 if is_initial_load {
                     state.selected_doc_index = 0;
                     state.doc_scroll_offset = 0;
+                    state.expanded_field = None;
                 }
 
                 if fetched > 0 {

@@ -35,9 +35,6 @@ pub fn handle_paste_text(mut text: String, state: &mut AppState) {
 pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
     match key.code {
         KeyCode::Enter => {
-            let keep_active_input =
-                state.input_context == InputContext::None && state.active_input.is_some();
-
             match state.input_context {
                 InputContext::Uri => {
                     if let Some((uri, name)) = parse_connection_input(&state.input_text) {
@@ -138,14 +135,22 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                     }
                 }
 
-                InputContext::None => {}
+                InputContext::None => {
+                    if state.active_input.is_some() {
+                        if let Some((uri, db, name)) = &state.selected_collection {
+                            state.current_documents.clear();
+                            state.expanded_field = None;
+                            state.document_skip = 0;
+                            state.fetch_collection_data =
+                                Some((uri.clone(), db.clone(), name.clone()));
+                        }
+                    }
+                }
             }
             state.mode = AppMode::Normal;
             state.input_context = InputContext::None;
             state.input_text.clear();
-            if !keep_active_input {
-                state.active_input = None;
-            }
+            state.active_input = None;
         }
 
         KeyCode::Esc => {
@@ -153,14 +158,9 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                 state.popup_message = None;
                 state.popup_message_success = None;
             } else {
-                let keep_active_input =
-                    state.input_context == InputContext::None && state.active_input.is_some();
-
                 state.mode = AppMode::Normal;
                 state.input_context = InputContext::None;
-                if !keep_active_input {
-                    state.active_input = None;
-                }
+                state.active_input = None;
             }
         }
 

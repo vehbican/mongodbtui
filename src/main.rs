@@ -22,7 +22,6 @@ use tui::input::render_input;
 use widgets::{
     connection_panel::render_connections,
     documents::render_documents,
-    header::render_filter,
     help_popup::draw_help_popup,
     import::{centered_rect, render_file_picker},
     popup::{render_popup, render_popup_success},
@@ -81,14 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(chunks[0]);
 
-            let right_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
-                .split(content_chunks[1]);
-
             render_connections(f, content_chunks[0], &state);
-            render_filter(f, right_chunks[0], &state);
-            render_documents(f, right_chunks[1], &state);
+            render_documents(f, content_chunks[1], &state);
             render_status_bar(f, chunks[1], &state);
             render_popup(f, f.area(), &state);
             render_popup_success(f, f.area(), &state);

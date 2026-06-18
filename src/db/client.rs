@@ -226,23 +226,6 @@ pub async fn apply_edited_json(
     };
     apply_edited_document(client, db_name, collection_name, original, &edited_doc).await
 }
-pub async fn delete_documents_by_filter(
-    client: &Client,
-    db_name: &str,
-    collection_name: &str,
-    filter_text: &str,
-) -> Result<(), mongodb::error::Error> {
-    let db = client.database(db_name);
-    let collection = db.collection::<Document>(collection_name);
-
-    let filter_doc = if !filter_text.trim().is_empty() {
-        serde_json::from_str::<Document>(filter_text).unwrap_or_else(|_| doc! {})
-    } else {
-        doc! {}
-    };
-
-    collection.delete_many(filter_doc).await.map(|_| ())
-}
 pub async fn delete_collection(
     client: &Client,
     db_name: &str,

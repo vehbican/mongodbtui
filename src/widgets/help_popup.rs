@@ -13,9 +13,9 @@ q           Quit the application
 Esc         Dismiss popup / clear search hits
 
 Focus Navigation:
-Ctrl+l      Focus → Filter/Sort
+Ctrl+l      Focus → Documents
 Ctrl+j      Focus → Documents
-Ctrl+k      Focus → Filter/Sort
+Ctrl+k      Focus → Connections
 Ctrl+h      Focus → Connections
 
 List Navigation:
@@ -34,14 +34,10 @@ I           Import database into selected connection
 f           Run shell script from file picker
 d+d         Delete selected collection or database
 
-Filter & Sort:
-a           Edit filter or sort input
-Tab         Toggle between filter and sort input
-Enter       Apply filter & sort
-p           Paste clipboard into active filter/sort input
-d+d         Delete documents matching current filter
-
 Documents:
+/           Edit filter command
+s           Edit sort command
+Enter       Expand/collapse selected field
 n / N       Next / previous field in selected document
 e           Edit selected document in external editor
 y           Copy selected field as filter fragment
@@ -49,7 +45,7 @@ d+d         Delete selected document
 D           Delete selected field (except _id)
 
 Insert Mode:
-Enter       Submit input
+Enter       Submit input / apply filter or sort
 Esc         Cancel editing
 ← / →       Move cursor
 Backspace   Delete character
