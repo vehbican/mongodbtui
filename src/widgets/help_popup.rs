@@ -14,8 +14,6 @@ Esc         Dismiss popup / clear search hits
 
 Focus Navigation:
 Ctrl+l      Focus → Documents
-Ctrl+j      Focus → Documents
-Ctrl+k      Focus → Connections
 Ctrl+h      Focus → Connections
 
 List Navigation:

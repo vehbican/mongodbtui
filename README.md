@@ -65,9 +65,7 @@ mongodbtui
 ### Focus Navigation
 | Key            | Action                           |
 |----------------|----------------------------------|
-| `Ctrl+l`       | Focus → Filter/Sort              |
-| `Ctrl+j`       | Focus → Documents                |
-| `Ctrl+k`       | Focus → Filter/Sort              |
+| `Ctrl+l`       | Focus → Documents                |
 | `Ctrl+h`       | Focus → Connections              |
 
 ### List Navigation
@@ -90,18 +88,12 @@ mongodbtui
 | `f`     | Run shell script from file picker                                      |
 | `d` + `d` | Delete selected collection or database                              |
 
-### Filter & Sort
-| Key       | Action                               |
-|-----------|--------------------------------------|
-| `a`       | Edit filter or sort input            |
-| `Tab`     | Toggle between filter and sort input |
-| `Enter`   | Apply filter & sort                  |
-| `p`       | Paste clipboard into active filter/sort input |
-| `d` + `d` | Delete documents matching current filter |
-
 ### Documents
 | Key       | Action                               |
 |-----------|--------------------------------------|
+| `/`       | Edit filter command                  |
+| `s`       | Edit sort command                    |
+| `Enter`   | Expand/collapse selected field       |
 | `n` / `N` | Next / previous field in selected document |
 | `e`       | Edit selected document in external editor |
 | `y`       | Copy selected field as filter fragment |
@@ -111,7 +103,7 @@ mongodbtui
 ### Insert Mode
 | Key         | Action               |
 |-------------|----------------------|
-| `Enter`     | Submit input         |
+| `Enter`     | Submit input / apply filter or sort |
 | `Esc`       | Cancel editing       |
 | `← / →`     | Move cursor          |
 | `Backspace` | Delete character     |

@@ -37,7 +37,6 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                 ('l', FocusArea::Connections) => {
                     state.focus = FocusArea::Documents;
                 }
-                ('k', FocusArea::Documents) => state.focus = FocusArea::Connections,
                 ('h', FocusArea::Documents) => state.focus = FocusArea::Connections,
                 _ => {}
             }
