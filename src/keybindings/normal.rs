@@ -1,12 +1,13 @@
 use crate::app::{
-    ActiveInputField, AppMode, AppState, FocusArea, InputContext, PendingDeletion, SelectableItem,
+    ActiveInputField, AppMode, AppState, FocusArea, InputContext, PendingBulkDeletion,
+    PendingDeletion, SelectableItem,
 };
-use crate::keybindings::editor::open_in_external_editor;
+use crate::keybindings::editor::{open_bulk_update_editor, open_in_external_editor};
 use crate::tui::events::{goto_collection, inner_end_pos};
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
 use crate::utils::write_clipboard_string;
 use crate::widgets::help_popup::HELP_TEXT;
-use bson::Bson;
+use bson::{Bson, Document};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
 
@@ -82,6 +83,59 @@ async fn confirm_deletion(state: &mut AppState) {
     }
 }
 
+async fn confirm_bulk_update(state: &mut AppState) {
+    let Some(update) = state.pending_bulk_update.take() else {
+        return;
+    };
+    let Some(client) = state.mongo_client.clone() else {
+        state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+        return;
+    };
+
+    state.popup_message = None;
+    match crate::db::client::update_documents_with_filter(
+        &client,
+        &update.db,
+        &update.collection,
+        update.filter,
+        update.update,
+    )
+    .await
+    {
+        Ok(modified_count) => {
+            state.reload_documents_for_selected_collection().await;
+            state.popup_message_success = Some(format!("✅ Updated {modified_count} document(s)"));
+        }
+        Err(error) => state.popup_message = Some(format!("❌ Failed to update documents: {error}")),
+    }
+}
+
+async fn confirm_bulk_deletion(state: &mut AppState) {
+    let Some(deletion) = state.pending_bulk_deletion.take() else {
+        return;
+    };
+    let Some(client) = state.mongo_client.clone() else {
+        state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+        return;
+    };
+
+    state.popup_message = None;
+    match crate::db::client::delete_documents_with_filter(
+        &client,
+        &deletion.db,
+        &deletion.collection,
+        deletion.filter,
+    )
+    .await
+    {
+        Ok(deleted_count) => {
+            state.reload_documents_for_selected_collection().await;
+            state.popup_message_success = Some(format!("✅ Deleted {deleted_count} document(s)"));
+        }
+        Err(error) => state.popup_message = Some(format!("❌ Failed to delete documents: {error}")),
+    }
+}
+
 pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
     if state.pending_deletion.is_some() {
         match key.code {
@@ -89,6 +143,30 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             KeyCode::Char('n') | KeyCode::Esc => {
                 state.pending_deletion = None;
                 state.popup_message = Some("Deletion cancelled.".to_string());
+            }
+            _ => {}
+        }
+        return false;
+    }
+
+    if state.pending_bulk_update.is_some() {
+        match key.code {
+            KeyCode::Char('y') => confirm_bulk_update(state).await,
+            KeyCode::Char('n') | KeyCode::Esc => {
+                state.pending_bulk_update = None;
+                state.popup_message = Some("Bulk update cancelled.".to_string());
+            }
+            _ => {}
+        }
+        return false;
+    }
+
+    if state.pending_bulk_deletion.is_some() {
+        match key.code {
+            KeyCode::Char('y') => confirm_bulk_deletion(state).await,
+            KeyCode::Char('n') | KeyCode::Esc => {
+                state.pending_bulk_deletion = None;
+                state.popup_message = Some("Bulk deletion cancelled.".to_string());
             }
             _ => {}
         }
@@ -395,6 +473,71 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                 }
             }
         },
+
+        KeyCode::Char('U') if state.focus == FocusArea::Documents => {
+            match open_bulk_update_editor(state).await {
+                Ok(Some(update)) => {
+                    state.pending_bulk_update = Some(update);
+                    state.popup_message_success = None;
+                    state.popup_message = state
+                        .pending_bulk_update
+                        .as_ref()
+                        .map(|update| update.confirmation_message());
+                }
+                Ok(None) => {}
+                Err(error) => state.popup_message = Some(format!("❌ {error}")),
+            }
+        }
+
+        KeyCode::Char('X') if state.focus == FocusArea::Documents => {
+            let Some((_, db, collection)) = &state.selected_collection else {
+                state.popup_message = Some("❌ No collection selected.".to_string());
+                return false;
+            };
+            let (db, collection) = (db.clone(), collection.clone());
+            let Some(client) = state.mongo_client.clone() else {
+                state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+                return false;
+            };
+            let filter = if state.filter_text.trim().is_empty() {
+                Document::new()
+            } else {
+                match serde_json::from_str::<Document>(&state.filter_text) {
+                    Ok(filter) => filter,
+                    Err(error) => {
+                        state.popup_message = Some(format!("❌ Filter is not valid JSON: {error}"));
+                        return false;
+                    }
+                }
+            };
+
+            match crate::db::client::count_documents_with_filter(
+                &client,
+                &db,
+                &collection,
+                filter.clone(),
+            )
+            .await
+            {
+                Ok(matched_count) => {
+                    state.pending_bulk_deletion = Some(PendingBulkDeletion {
+                        db,
+                        collection,
+                        filter,
+                        matched_count,
+                    });
+                    state.popup_message_success = None;
+                    state.popup_message = state
+                        .pending_bulk_deletion
+                        .as_ref()
+                        .map(|deletion| deletion.confirmation_message());
+                }
+                Err(error) => {
+                    state.popup_message =
+                        Some(format!("❌ Could not count matching documents: {error}"));
+                }
+            }
+        }
 
         KeyCode::Esc => {
             state.popup_message = None;

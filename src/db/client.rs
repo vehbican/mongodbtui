@@ -109,6 +109,48 @@ pub async fn count_documents(
 
     collection.count_documents(filter_doc).await
 }
+
+pub async fn count_documents_with_filter(
+    client: &Client,
+    db_name: &str,
+    collection_name: &str,
+    filter: Document,
+) -> Result<u64, mongodb::error::Error> {
+    client
+        .database(db_name)
+        .collection::<Document>(collection_name)
+        .count_documents(filter)
+        .await
+}
+
+pub async fn update_documents_with_filter(
+    client: &Client,
+    db_name: &str,
+    collection_name: &str,
+    filter: Document,
+    update: Document,
+) -> Result<u64, mongodb::error::Error> {
+    client
+        .database(db_name)
+        .collection::<Document>(collection_name)
+        .update_many(filter, update)
+        .await
+        .map(|result| result.modified_count)
+}
+
+pub async fn delete_documents_with_filter(
+    client: &Client,
+    db_name: &str,
+    collection_name: &str,
+    filter: Document,
+) -> Result<u64, mongodb::error::Error> {
+    client
+        .database(db_name)
+        .collection::<Document>(collection_name)
+        .delete_many(filter)
+        .await
+        .map(|result| result.deleted_count)
+}
 pub async fn apply_edited_document(
     client: &Client,
     db_name: &str,

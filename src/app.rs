@@ -81,6 +81,39 @@ pub enum PendingDeletion {
     },
 }
 
+pub struct PendingBulkUpdate {
+    pub db: String,
+    pub collection: String,
+    pub filter: Document,
+    pub update: Document,
+    pub matched_count: u64,
+}
+
+pub struct PendingBulkDeletion {
+    pub db: String,
+    pub collection: String,
+    pub filter: Document,
+    pub matched_count: u64,
+}
+
+impl PendingBulkDeletion {
+    pub fn confirmation_message(&self) -> String {
+        format!(
+            "Delete {} document(s) matching this filter? [y/N]",
+            self.matched_count
+        )
+    }
+}
+
+impl PendingBulkUpdate {
+    pub fn confirmation_message(&self) -> String {
+        format!(
+            "Update {} document(s) matching this filter? [y/N]",
+            self.matched_count
+        )
+    }
+}
+
 impl PendingDeletion {
     pub fn confirmation_message(&self) -> String {
         let target = match self {
@@ -156,6 +189,8 @@ pub struct AppState {
     pub collection_search_idx: usize,
     pub theme: ThemeName,
     pub pending_deletion: Option<PendingDeletion>,
+    pub pending_bulk_update: Option<PendingBulkUpdate>,
+    pub pending_bulk_deletion: Option<PendingBulkDeletion>,
 }
 
 impl Default for AppState {
@@ -204,6 +239,8 @@ impl Default for AppState {
             collection_search_idx: 0,
             theme: ThemeName::default(),
             pending_deletion: None,
+            pending_bulk_update: None,
+            pending_bulk_deletion: None,
         }
     }
 }

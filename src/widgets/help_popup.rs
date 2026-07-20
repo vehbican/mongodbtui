@@ -11,7 +11,7 @@ pub const HELP_TEXT: &str = r#"
 Global:
 ?           Toggle help popup
 t           Cycle theme (system, emerald, ocean, rose, monochrome)
-y / n       Confirm / cancel a pending deletion
+y / n       Confirm / cancel a pending action
 q           Quit the application
 Esc         Dismiss popup / clear search hits
 
@@ -43,6 +43,8 @@ Ctrl+u/PageUp Scroll document up
 Enter       Expand/collapse selected field
 n / N       Next / previous field in selected document
 e           Edit selected document in external editor
+U           Edit a bulk update for filtered documents in $EDITOR
+X           Request deletion of filtered documents
 y           Copy selected field as filter fragment
 d+d         Request deletion of selected document
 D           Request deletion of selected field (except _id)

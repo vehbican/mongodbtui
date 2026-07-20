@@ -1,5 +1,5 @@
-use crate::app::AppState;
-use crate::db::client::apply_edited_json;
+use crate::app::{AppState, PendingBulkUpdate};
+use crate::db::client::{apply_edited_json, count_documents_with_filter};
 use crossterm::{
     cursor::{Hide, Show},
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -9,6 +9,64 @@ use crossterm::{
 use edit::edit;
 use mongodb::bson::Document;
 use std::io::{self, Stdout, Write};
+
+const BULK_UPDATE_TEMPLATE: &str = r#"{
+  "$set": {
+    "field": "value"
+  }
+}"#;
+
+pub async fn open_bulk_update_editor(
+    state: &mut AppState,
+) -> Result<Option<PendingBulkUpdate>, String> {
+    let (db, collection) = state
+        .selected_collection
+        .as_ref()
+        .map(|(_, db, collection)| (db.clone(), collection.clone()))
+        .ok_or_else(|| "No collection selected.".to_string())?;
+    let client = state
+        .mongo_client
+        .clone()
+        .ok_or_else(|| "No MongoDB connection.".to_string())?;
+    let filter = if state.filter_text.trim().is_empty() {
+        Document::new()
+    } else {
+        serde_json::from_str(&state.filter_text)
+            .map_err(|error| format!("Filter is not valid JSON: {error}"))?
+    };
+
+    let edited = {
+        let _guard = TuiSuspendGuard::suspend()
+            .map_err(|error| format!("Could not suspend TUI: {error}"))?;
+        edit(BULK_UPDATE_TEMPLATE)
+            .map_err(|error| format!("Could not open external editor: {error}"))?
+    };
+    state.redraw = true;
+
+    if edited.trim() == BULK_UPDATE_TEMPLATE.trim() {
+        return Ok(None);
+    }
+
+    let update: Document = serde_json::from_str(&edited)
+        .map_err(|error| format!("Update is not valid JSON: {error}"))?;
+    if update.is_empty() || update.keys().any(|key| !key.starts_with('$')) {
+        return Err(
+            "Update must contain MongoDB operators such as $set, $unset, or $inc.".to_string(),
+        );
+    }
+
+    let matched_count = count_documents_with_filter(&client, &db, &collection, filter.clone())
+        .await
+        .map_err(|error| format!("Could not count matching documents: {error}"))?;
+
+    Ok(Some(PendingBulkUpdate {
+        db,
+        collection,
+        filter,
+        update,
+        matched_count,
+    }))
+}
 
 pub async fn open_in_external_editor(state: &mut AppState) -> Result<(), String> {
     let (db_name, col_name) = state
