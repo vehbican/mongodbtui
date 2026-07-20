@@ -50,6 +50,7 @@ pub async fn handle_connection(state: &mut AppState, uri: &str) {
             state.selected_collection = None;
             state.selected_doc_index = 0;
             state.doc_scroll_offset = 0;
+            state.document_line_scroll = 0;
             state.rebuild_tree_items();
 
             state.popup_message = Some(format!("❌ Connection failed to {}: {}", uri, err));
@@ -113,6 +114,7 @@ pub async fn fetch_and_update_documents(state: &mut AppState, uri: &str, db: &st
                 if is_initial_load {
                     state.selected_doc_index = 0;
                     state.doc_scroll_offset = 0;
+                    state.document_line_scroll = 0;
                     state.expanded_field = None;
                 }
 

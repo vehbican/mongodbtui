@@ -43,6 +43,22 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             };
         }
 
+        KeyCode::PageDown | KeyCode::Char('d')
+            if state.focus == FocusArea::Documents
+                && (key.code == KeyCode::PageDown
+                    || key.modifiers.contains(KeyModifiers::CONTROL)) =>
+        {
+            state.document_line_scroll = state.document_line_scroll.saturating_add(10);
+        }
+
+        KeyCode::PageUp | KeyCode::Char('u')
+            if state.focus == FocusArea::Documents
+                && (key.code == KeyCode::PageUp
+                    || key.modifiers.contains(KeyModifiers::CONTROL)) =>
+        {
+            state.document_line_scroll = state.document_line_scroll.saturating_sub(10);
+        }
+
         KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
             match (c, &state.focus) {
                 ('l', FocusArea::Connections) => {
@@ -438,6 +454,7 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
 
                         if state.selected_doc_index + 1 < total_loaded {
                             state.selected_doc_index += 1;
+                            state.document_line_scroll = 0;
                             if state.selected_doc_index >= state.doc_scroll_offset + max_visible {
                                 state.doc_scroll_offset += 1;
                             }
@@ -473,6 +490,7 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     FocusArea::Documents => {
                         if state.selected_doc_index > 0 {
                             state.selected_doc_index -= 1;
+                            state.document_line_scroll = 0;
                             if state.selected_doc_index < state.doc_scroll_offset {
                                 state.doc_scroll_offset = state.doc_scroll_offset.saturating_sub(1);
                             }
@@ -557,6 +575,7 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                             state.focus = FocusArea::Documents;
                             state.selected_doc_index = 0;
                             state.doc_scroll_offset = 0;
+                            state.document_line_scroll = 0;
                             state.filter_text = "{}".to_string();
                             state.sort_text = "{}".to_string();
                             state.cursor_position = 1;

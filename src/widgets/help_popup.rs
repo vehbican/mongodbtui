@@ -37,6 +37,8 @@ d+d         Delete selected collection or database
 Documents:
 /           Edit filter command
 s           Edit sort command
+Ctrl+d/PageDown Scroll document down
+Ctrl+u/PageUp Scroll document up
 Enter       Expand/collapse selected field
 n / N       Next / previous field in selected document
 e           Edit selected document in external editor

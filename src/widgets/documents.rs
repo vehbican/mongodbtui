@@ -149,7 +149,10 @@ pub fn render_documents(f: &mut Frame, area: Rect, state: &AppState) {
                 },
             );
 
-        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+        let paragraph = Paragraph::new(text)
+            .block(block)
+            .scroll((state.document_line_scroll, 0))
+            .wrap(Wrap { trim: true });
 
         f.render_widget(paragraph, chunks[i]);
     }

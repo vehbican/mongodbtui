@@ -97,6 +97,7 @@ pub struct AppState {
     pub focus: FocusArea,
     pub selected_doc_index: usize,
     pub doc_scroll_offset: usize,
+    pub document_line_scroll: u16,
     pub document_skip: usize,
     pub document_limit: usize,
     pub filter_text: String,
@@ -143,6 +144,7 @@ impl Default for AppState {
             focus: FocusArea::default(),
             selected_doc_index: 0,
             doc_scroll_offset: 0,
+            document_line_scroll: 0,
             document_skip: 0,
             document_limit: 100,
             filter_text: "{}".to_string(),
@@ -192,6 +194,7 @@ impl AppState {
         self.selected_field_index = 0;
         self.selected_doc_index = 0;
         self.doc_scroll_offset = 0;
+        self.document_line_scroll = 0;
         self.expanded_field = None;
     }
 
