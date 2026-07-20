@@ -1,7 +1,8 @@
+use crate::theme::Theme;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -9,6 +10,7 @@ use ratatui::{
 pub const HELP_TEXT: &str = r#"
 Global:
 ?           Toggle help popup
+t           Cycle theme (system, emerald, ocean, rose, monochrome)
 q           Quit the application
 Esc         Dismiss popup / clear search hits
 
@@ -60,7 +62,7 @@ Esc         Exit file picker
 
 "#;
 
-pub fn draw_help_popup(f: &mut Frame<'_>, area: Rect, scroll: usize) {
+pub fn draw_help_popup(f: &mut Frame<'_>, area: Rect, scroll: usize, theme: &Theme) {
     let popup_area = centered_rect(70, 70, area);
     let max_height = popup_area.height.saturating_sub(2) as usize;
 
@@ -73,16 +75,16 @@ pub fn draw_help_popup(f: &mut Frame<'_>, area: Rect, scroll: usize) {
                 Line::from(Span::styled(
                     line,
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(theme.primary)
                         .add_modifier(Modifier::BOLD),
                 ))
             } else if trimmed.is_empty() {
                 Line::from("")
             } else if let Some((key, desc)) = line.split_once("  ") {
                 Line::from(vec![
-                    Span::styled(key, Style::default().fg(Color::Gray)),
+                    Span::styled(key, Style::default().fg(theme.muted)),
                     Span::raw("  "),
-                    Span::styled(desc.trim_start(), Style::default().fg(Color::Yellow)),
+                    Span::styled(desc.trim_start(), Style::default().fg(theme.secondary)),
                 ])
             } else {
                 Line::from(Span::raw(line))
@@ -102,7 +104,7 @@ pub fn draw_help_popup(f: &mut Frame<'_>, area: Rect, scroll: usize) {
             Block::default()
                 .title(" MongoDB TUI Help ")
                 .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Green))
+                .style(Style::default().fg(theme.primary))
                 .border_type(ratatui::widgets::BorderType::Rounded),
         )
         .alignment(Alignment::Left)

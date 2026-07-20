@@ -32,6 +32,17 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
             state.current_documents.clear();
         }
 
+        KeyCode::Char('t') => {
+            state.theme = state.theme.next();
+            state.popup_message_success = match crate::utils::save_theme(state.theme) {
+                Ok(()) => Some(format!("Theme: {}", state.theme.as_str())),
+                Err(error) => {
+                    state.popup_message = Some(format!("Could not save theme: {error}"));
+                    None
+                }
+            };
+        }
+
         KeyCode::Char(c) if key.modifiers.contains(KeyModifiers::CONTROL) => {
             match (c, &state.focus) {
                 ('l', FocusArea::Connections) => {

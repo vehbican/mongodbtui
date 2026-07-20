@@ -1,4 +1,4 @@
-use crate::app::Connection;
+use crate::{app::Connection, theme::ThemeName};
 use arboard::Clipboard;
 #[cfg(target_os = "linux")]
 use arboard::SetExtLinux;
@@ -23,6 +23,30 @@ fn get_config_file_path() -> PathBuf {
     std::fs::create_dir_all(&path).ok();
     path.push("connections.csv");
     path
+}
+
+fn get_theme_file_path() -> PathBuf {
+    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("mongodbtui");
+    std::fs::create_dir_all(&path).ok();
+    path.push("theme");
+    path
+}
+
+pub fn load_theme() -> ThemeName {
+    std::fs::read_to_string(get_theme_file_path())
+        .ok()
+        .and_then(|value| ThemeName::parse(&value))
+        .unwrap_or_default()
+}
+
+pub fn save_theme(theme: ThemeName) -> io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.create(true).write(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(get_theme_file_path())?;
+    writeln!(file, "{}", theme.as_str())
 }
 
 fn keyring_key(id: usize) -> String {
@@ -267,13 +291,6 @@ fn write_system_clipboard_string(text: &str) -> Result<(), String> {
         })
         .map(|_| ())
         .map_err(|e| format!("Could not start clipboard thread: {e}"))
-}
-
-#[cfg(not(target_os = "linux"))]
-fn write_system_clipboard_string(text: &str) -> Result<(), String> {
-    let mut cb = Clipboard::new().map_err(|e| format!("Could not open clipboard: {e}"))?;
-    cb.set_text(text)
-        .map_err(|e| format!("Could not write clipboard: {e}"))
 }
 
 fn write_terminal_clipboard_string(text: &str) -> Result<(), String> {

@@ -1,8 +1,11 @@
-use crate::tui::filepicker::{FileEntry, FilePickerState};
+use crate::{
+    theme::Theme,
+    tui::filepicker::{FileEntry, FilePickerState},
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
 };
@@ -27,10 +30,11 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(vertical[1])[1]
 }
 
-pub fn render_file_picker(f: &mut Frame, area: Rect, picker: &FilePickerState) {
+pub fn render_file_picker(f: &mut Frame, area: Rect, picker: &FilePickerState, theme: &Theme) {
     let outer_block = Block::default()
         .title("📁 Import File Picker")
-        .borders(Borders::ALL);
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.primary));
 
     let inner_area = outer_block.inner(area);
     f.render_widget(outer_block, area);
@@ -63,7 +67,7 @@ pub fn render_file_picker(f: &mut Frame, area: Rect, picker: &FilePickerState) {
             let style = if let Some(p) = &path {
                 if picker.selected_files.contains(p) {
                     Style::default()
-                        .fg(Color::Green)
+                        .fg(theme.success)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
@@ -86,10 +90,16 @@ pub fn render_file_picker(f: &mut Frame, area: Rect, picker: &FilePickerState) {
         .block(
             Block::default()
                 .title(picker.current_path.display().to_string())
-                .borders(Borders::ALL),
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.secondary)),
         )
         .highlight_symbol("➤ ")
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        .highlight_style(
+            Style::default()
+                .fg(theme.accent)
+                .bg(theme.primary)
+                .add_modifier(Modifier::BOLD),
+        );
 
     f.render_stateful_widget(list, inner_area, &mut list_state);
 }

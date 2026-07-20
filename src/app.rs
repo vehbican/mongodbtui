@@ -1,5 +1,6 @@
 use crate::{
     db::client::{count_documents, fetch_documents},
+    theme::ThemeName,
     tui::filepicker::FilePickerState,
 };
 use crossterm::event::KeyEvent;
@@ -113,6 +114,7 @@ pub struct AppState {
     pub redraw: bool,
     pub collection_search_hits: Vec<(String, String, String)>,
     pub collection_search_idx: usize,
+    pub theme: ThemeName,
 }
 
 impl Default for AppState {
@@ -158,6 +160,7 @@ impl Default for AppState {
             redraw: false,
             collection_search_hits: Vec::new(),
             collection_search_idx: 0,
+            theme: ThemeName::default(),
         }
     }
 }

@@ -2,13 +2,14 @@ use crate::app::{AppMode, AppState, InputContext};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 use unicode_width::UnicodeWidthStr;
 
 pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
+    let theme = state.theme.palette();
     if state.mode != AppMode::Insert || state.input_context == InputContext::None {
         return;
     }
@@ -66,8 +67,8 @@ pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(title)
-                .border_style(Style::default().fg(Color::Green))
-                .style(Style::default().fg(Color::White).bg(Color::Black)),
+                .border_style(Style::default().fg(theme.primary))
+                .style(Style::default().fg(theme.foreground).bg(theme.background)),
         )
         .wrap(Wrap { trim: false });
 

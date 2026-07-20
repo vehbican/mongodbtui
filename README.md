@@ -59,6 +59,7 @@ mongodbtui
 | Key        | Action                                |
 |------------|----------------------------------------|
 | `?`        | Toggle help popup                      |
+| `t`        | Cycle theme (system, emerald, ocean, rose, monochrome) |
 | `q`        | Quit the application                   |
 | `Esc`      | Dismiss popup / clear search hits      |
 

@@ -1,9 +1,12 @@
-use crate::app::{AppState, FocusArea};
+use crate::{
+    app::{AppState, FocusArea},
+    theme::Theme,
+};
 use bson::Bson;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -43,10 +46,11 @@ fn push_field_lines(
     value: &str,
     is_selected: bool,
     is_expanded: bool,
+    theme: &Theme,
 ) {
     let style = Style::default()
-        .fg(Color::Black)
-        .bg(Color::Green)
+        .fg(theme.accent)
+        .bg(theme.primary)
         .add_modifier(Modifier::BOLD);
 
     if !is_expanded {
@@ -75,13 +79,14 @@ fn push_field_lines(
 }
 
 pub fn render_documents(f: &mut Frame, area: Rect, state: &AppState) {
+    let theme = state.theme.palette();
     let documents = &state.current_documents;
 
     if documents.is_empty() {
         let block = Block::default()
             .title("Documents")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
+            .border_style(Style::default().fg(theme.secondary));
 
         let empty = Paragraph::new("No documents to display")
             .block(block)
@@ -120,7 +125,14 @@ pub fn render_documents(f: &mut Frame, area: Rect, state: &AppState) {
                 && state.selected_field_index == field_index;
             let is_expanded = state.expanded_field == Some((real_index, field_index));
 
-            push_field_lines(&mut lines, key, &value_str, is_selected, is_expanded);
+            push_field_lines(
+                &mut lines,
+                key,
+                &value_str,
+                is_selected,
+                is_expanded,
+                &theme,
+            );
         }
 
         let text = Text::from(lines);
@@ -131,7 +143,7 @@ pub fn render_documents(f: &mut Frame, area: Rect, state: &AppState) {
             .borders(Borders::ALL)
             .border_style(
                 if state.focus == FocusArea::Documents && state.selected_doc_index == real_index {
-                    Style::default().fg(Color::Black).bg(Color::Yellow)
+                    Style::default().fg(theme.accent).bg(theme.secondary)
                 } else {
                     Style::default()
                 },

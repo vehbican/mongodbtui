@@ -1,8 +1,11 @@
-use crate::app::{ActiveInputField, AppMode, AppState, InputContext};
+use crate::{
+    app::{ActiveInputField, AppMode, AppState, InputContext},
+    theme::Theme,
+};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::Text,
     widgets::{Block, Paragraph},
 };
@@ -15,6 +18,7 @@ fn render_command_line(
     prefix: &str,
     value: &str,
     cursor_position: usize,
+    theme: &Theme,
 ) {
     let inner_width = area.width as usize;
     let cursor_position = cursor_position.min(value.graphemes(true).count());
@@ -45,7 +49,7 @@ fn render_command_line(
         visible.push_str(grapheme);
     }
 
-    let paragraph = Paragraph::new(Text::from(visible)).style(Style::default().fg(Color::Green));
+    let paragraph = Paragraph::new(Text::from(visible)).style(Style::default().fg(theme.primary));
     f.render_widget(paragraph, area);
 
     let cursor_x = area.x + cursor_visual_offset.saturating_sub(skipped_width) as u16;
@@ -53,14 +57,29 @@ fn render_command_line(
 }
 
 pub fn render_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
+    let theme = state.theme.palette();
     if state.mode == AppMode::Insert && state.input_context == InputContext::None {
         match state.active_input {
             Some(ActiveInputField::Filter) => {
-                render_command_line(f, area, "/", &state.filter_text, state.cursor_position);
+                render_command_line(
+                    f,
+                    area,
+                    "/",
+                    &state.filter_text,
+                    state.cursor_position,
+                    &theme,
+                );
                 return;
             }
             Some(ActiveInputField::Sort) => {
-                render_command_line(f, area, ":sort ", &state.sort_text, state.cursor_position);
+                render_command_line(
+                    f,
+                    area,
+                    ":sort ",
+                    &state.sort_text,
+                    state.cursor_position,
+                    &theme,
+                );
                 return;
             }
             _ => {}
@@ -84,7 +103,7 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let paragraph = Paragraph::new(Text::from(status_line))
-        .style(Style::default().fg(Color::Yellow))
+        .style(Style::default().fg(theme.secondary))
         .block(Block::default());
 
     f.render_widget(paragraph, area);

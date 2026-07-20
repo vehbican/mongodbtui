@@ -2,12 +2,13 @@ use crate::app::{AppState, FocusArea, SelectableItem};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
 pub fn render_connections(f: &mut Frame, area: Rect, state: &AppState) {
+    let theme = state.theme.palette();
     let items: Vec<ListItem> = state
         .tree_items
         .iter()
@@ -17,8 +18,8 @@ pub fn render_connections(f: &mut Frame, area: Rect, state: &AppState) {
             } => {
                 let content = if *connected {
                     Line::from(vec![
-                        Span::styled("✔ ", Style::default().fg(Color::Green)),
-                        Span::styled(name, Style::default().fg(Color::Green)),
+                        Span::styled("✔ ", Style::default().fg(theme.success)),
+                        Span::styled(name, Style::default().fg(theme.success)),
                     ])
                 } else {
                     Line::from(Span::raw(name))
@@ -39,7 +40,7 @@ pub fn render_connections(f: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let highlight_style = if state.focus == FocusArea::Connections {
-        Style::default().bg(Color::Green).fg(Color::Black)
+        Style::default().bg(theme.primary).fg(theme.accent)
     } else {
         Style::default()
     };
@@ -49,7 +50,7 @@ pub fn render_connections(f: &mut Frame, area: Rect, state: &AppState) {
             Block::default()
                 .title("Connections")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green)),
+                .border_style(Style::default().fg(theme.primary)),
         )
         .highlight_style(highlight_style);
 

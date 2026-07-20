@@ -14,6 +14,7 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
+    style::Style,
     widgets::Block,
 };
 use std::io;
@@ -31,6 +32,7 @@ use widgets::{
 mod app;
 mod db;
 mod keybindings;
+mod theme;
 mod tui;
 mod utils;
 mod widgets;
@@ -58,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = AppState {
         connections: utils::load_connections().unwrap_or_default(),
+        theme: utils::load_theme(),
         ..Default::default()
     };
     state.rebuild_tree_items();
@@ -70,6 +73,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             state.redraw = false;
         }
         terminal.draw(|f| {
+            let theme = state.theme.palette();
+            f.render_widget(
+                Block::default().style(Style::default().bg(theme.background).fg(theme.foreground)),
+                f.area(),
+            );
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Min(0), Constraint::Length(1)])
@@ -93,12 +101,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(picker) = &state.file_picker {
                 f.render_widget(Block::default(), f.area());
                 let popup_area = centered_rect(60, 60, f.area());
-                render_file_picker(f, popup_area, picker);
+                render_file_picker(f, popup_area, picker, &theme);
             }
 
             if state.show_help {
                 let area = centered_rect(70, 70, f.area());
-                draw_help_popup(f, area, state.help_scroll);
+                draw_help_popup(f, area, state.help_scroll, &theme);
             }
         })?;
 
