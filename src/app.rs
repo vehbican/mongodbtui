@@ -4,7 +4,10 @@ use crate::{
     tui::filepicker::FilePickerState,
 };
 use crossterm::event::KeyEvent;
-use mongodb::{Client, bson::Document};
+use mongodb::{
+    Client,
+    bson::{Document, oid::ObjectId},
+};
 use std::collections::{HashMap, HashSet};
 use unicode_segmentation::UnicodeSegmentation;
 #[derive(PartialEq)]
@@ -53,6 +56,42 @@ pub enum SelectableItem {
         db: String,
         name: String,
     },
+}
+
+pub enum PendingDeletion {
+    Collection {
+        uri: String,
+        db: String,
+        name: String,
+    },
+    Database {
+        uri: String,
+        name: String,
+    },
+    Document {
+        db: String,
+        collection: String,
+        id: ObjectId,
+    },
+    Field {
+        db: String,
+        collection: String,
+        id: ObjectId,
+        name: String,
+    },
+}
+
+impl PendingDeletion {
+    pub fn confirmation_message(&self) -> String {
+        let target = match self {
+            Self::Collection { name, .. } => format!("collection '{name}'"),
+            Self::Database { name, .. } => format!("database '{name}'"),
+            Self::Document { .. } => "selected document".to_string(),
+            Self::Field { name, .. } => format!("field '{name}'"),
+        };
+
+        format!("Are you sure you want to delete {target}? [y/N]")
+    }
 }
 
 impl Default for AppMode {
@@ -116,6 +155,7 @@ pub struct AppState {
     pub collection_search_hits: Vec<(String, String, String)>,
     pub collection_search_idx: usize,
     pub theme: ThemeName,
+    pub pending_deletion: Option<PendingDeletion>,
 }
 
 impl Default for AppState {
@@ -163,6 +203,7 @@ impl Default for AppState {
             collection_search_hits: Vec::new(),
             collection_search_idx: 0,
             theme: ThemeName::default(),
+            pending_deletion: None,
         }
     }
 }

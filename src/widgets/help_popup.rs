@@ -11,6 +11,7 @@ pub const HELP_TEXT: &str = r#"
 Global:
 ?           Toggle help popup
 t           Cycle theme (system, emerald, ocean, rose, monochrome)
+y / n       Confirm / cancel a pending deletion
 q           Quit the application
 Esc         Dismiss popup / clear search hits
 
@@ -32,7 +33,7 @@ x           Export selected collection or database
 i           Import collection into selected database
 I           Import database into selected connection
 f           Run shell script from file picker
-d+d         Delete selected collection or database
+d+d         Request deletion of selected collection or database
 
 Documents:
 /           Edit filter command
@@ -43,8 +44,8 @@ Enter       Expand/collapse selected field
 n / N       Next / previous field in selected document
 e           Edit selected document in external editor
 y           Copy selected field as filter fragment
-d+d         Delete selected document
-D           Delete selected field (except _id)
+d+d         Request deletion of selected document
+D           Request deletion of selected field (except _id)
 
 Insert Mode:
 Enter       Submit input / apply filter or sort

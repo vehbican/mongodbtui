@@ -1,4 +1,6 @@
-use crate::app::{ActiveInputField, AppMode, AppState, FocusArea, InputContext, SelectableItem};
+use crate::app::{
+    ActiveInputField, AppMode, AppState, FocusArea, InputContext, PendingDeletion, SelectableItem,
+};
 use crate::keybindings::editor::open_in_external_editor;
 use crate::tui::events::{goto_collection, inner_end_pos};
 use crate::tui::filepicker::{FilePickerMode, FilePickerState};
@@ -15,7 +17,84 @@ fn filter_value_json(value: &Bson) -> Result<String, serde_json::Error> {
     }
 }
 
+async fn confirm_deletion(state: &mut AppState) {
+    let Some(deletion) = state.pending_deletion.take() else {
+        return;
+    };
+    let Some(client) = state.mongo_client.clone() else {
+        state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+        return;
+    };
+
+    state.popup_message = None;
+    match deletion {
+        PendingDeletion::Collection { uri, db, name } => {
+            match crate::db::client::delete_collection(&client, &db, &name).await {
+                Ok(_) => {
+                    state.popup_message_success = Some(format!("✅ Deleted collection: {name}"));
+                    state.collection_to_load = Some((uri, db));
+                }
+                Err(error) => {
+                    state.popup_message = Some(format!("❌ Failed to delete collection: {error}"))
+                }
+            }
+        }
+        PendingDeletion::Database { uri, name } => {
+            match crate::db::client::delete_database(&client, &name).await {
+                Ok(_) => {
+                    state.popup_message_success = Some(format!("✅ Deleted database: {name}"));
+                    state.db_to_expand = Some((uri, name));
+                }
+                Err(error) => {
+                    state.popup_message = Some(format!("❌ Failed to delete database: {error}"))
+                }
+            }
+        }
+        PendingDeletion::Document { db, collection, id } => {
+            match crate::db::client::delete_document_by_id(&client, &db, &collection, id).await {
+                Ok(_) => {
+                    state.reload_documents_for_selected_collection().await;
+                    state.popup_message_success = Some("✅ Document deleted".to_string());
+                }
+                Err(error) => {
+                    state.popup_message = Some(format!("❌ Failed to delete document: {error}"))
+                }
+            }
+        }
+        PendingDeletion::Field {
+            db,
+            collection,
+            id,
+            name,
+        } => {
+            match crate::db::client::delete_field_in_document(&client, &db, &collection, id, &name)
+                .await
+            {
+                Ok(_) => {
+                    state.reload_documents_for_selected_collection().await;
+                    state.popup_message_success = Some(format!("✅ Deleted field: {name}"));
+                }
+                Err(error) => {
+                    state.popup_message = Some(format!("❌ Failed to delete field: {error}"))
+                }
+            }
+        }
+    }
+}
+
 pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
+    if state.pending_deletion.is_some() {
+        match key.code {
+            KeyCode::Char('y') => confirm_deletion(state).await,
+            KeyCode::Char('n') | KeyCode::Esc => {
+                state.pending_deletion = None;
+                state.popup_message = Some("Deletion cancelled.".to_string());
+            }
+            _ => {}
+        }
+        return false;
+    }
+
     match key.code {
         KeyCode::Char('q') => return true,
 
@@ -153,52 +232,19 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     FocusArea::Connections => {
                         if let Some(item) = state.tree_items.get(state.selected_index) {
                             match item {
-                                SelectableItem::Collection { db, name, .. } => {
-                                    if let Some(client) = &state.mongo_client {
-                                        match crate::db::client::delete_collection(client, db, name)
-                                            .await
-                                        {
-                                            Ok(_) => {
-                                                state.popup_message_success = Some(format!(
-                                                    "✅ Deleted collection: {}",
-                                                    name
-                                                ));
-                                                state.collection_to_load = Some((
-                                                    state.connected_uri.clone().unwrap(),
-                                                    db.clone(),
-                                                ));
-                                            }
-                                            Err(e) => {
-                                                state.popup_message = Some(format!(
-                                                    "❌ Failed to delete collection: {}",
-                                                    e
-                                                ));
-                                            }
-                                        }
-                                    }
+                                SelectableItem::Collection { uri, db, name } => {
+                                    state.pending_deletion = Some(PendingDeletion::Collection {
+                                        uri: uri.clone(),
+                                        db: db.clone(),
+                                        name: name.clone(),
+                                    });
                                 }
 
-                                SelectableItem::Database { uri, name: db_name } => {
-                                    if let Some(client) = &state.mongo_client {
-                                        match crate::db::client::delete_database(client, db_name)
-                                            .await
-                                        {
-                                            Ok(_) => {
-                                                state.popup_message_success = Some(format!(
-                                                    "✅ Deleted database: {}",
-                                                    db_name
-                                                ));
-                                                state.db_to_expand =
-                                                    Some((uri.clone(), db_name.clone()));
-                                            }
-                                            Err(e) => {
-                                                state.popup_message = Some(format!(
-                                                    "❌ Failed to delete database: {}",
-                                                    e
-                                                ));
-                                            }
-                                        }
-                                    }
+                                SelectableItem::Database { uri, name } => {
+                                    state.pending_deletion = Some(PendingDeletion::Database {
+                                        uri: uri.clone(),
+                                        name: name.clone(),
+                                    });
                                 }
 
                                 _ => {}
@@ -208,34 +254,22 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     FocusArea::Documents => {
                         if let Some(doc) = state.current_documents.get(state.selected_doc_index) {
                             if let Some(id) = doc.get_object_id("_id").ok() {
-                                if let Some((_, db, col)) = &state.selected_collection {
-                                    if let Some(client) = &state.mongo_client {
-                                        match crate::db::client::delete_document_by_id(
-                                            client, db, col, id,
-                                        )
-                                        .await
-                                        {
-                                            Ok(_) => {
-                                                state
-                                                    .reload_documents_for_selected_collection()
-                                                    .await;
-                                                state.popup_message_success =
-                                                    Some("✅ Document deleted".to_string());
-                                            }
-                                            Err(e) => {
-                                                state.popup_message = Some(format!(
-                                                    "❌ Failed to delete document: {}",
-                                                    e
-                                                ));
-                                            }
-                                        }
-                                    }
+                                if let Some((_, db, collection)) = &state.selected_collection {
+                                    state.pending_deletion = Some(PendingDeletion::Document {
+                                        db: db.clone(),
+                                        collection: collection.clone(),
+                                        id: id.to_owned(),
+                                    });
                                 }
                             }
                         }
                     }
                 }
                 state.last_key = None;
+                if let Some(deletion) = &state.pending_deletion {
+                    state.popup_message_success = None;
+                    state.popup_message = Some(deletion.confirmation_message());
+                }
             } else {
                 state.last_key = Some(key);
             }
@@ -265,24 +299,18 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                 };
 
                 if let Some((field, id)) = maybe_id_and_field {
-                    if let Some((_, db, col)) = &state.selected_collection {
-                        if let Some(client) = &state.mongo_client {
-                            match crate::db::client::delete_field_in_document(
-                                client, db, col, id, &field,
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    state.reload_documents_for_selected_collection().await;
-                                    state.popup_message_success =
-                                        Some(format!("✅ Deleted field: {}", field));
-                                }
-                                Err(e) => {
-                                    state.popup_message =
-                                        Some(format!("❌ Failed to delete field: {}", e));
-                                }
-                            }
-                        }
+                    if let Some((_, db, collection)) = &state.selected_collection {
+                        state.pending_deletion = Some(PendingDeletion::Field {
+                            db: db.clone(),
+                            collection: collection.clone(),
+                            id: id.to_owned(),
+                            name: field,
+                        });
+                        state.popup_message_success = None;
+                        state.popup_message = state
+                            .pending_deletion
+                            .as_ref()
+                            .map(PendingDeletion::confirmation_message);
                     }
                 }
             }
