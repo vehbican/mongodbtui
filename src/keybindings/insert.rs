@@ -136,6 +136,18 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                 }
 
                 InputContext::None => {
+                    if let Some(field) = state.active_input {
+                        let value = match field {
+                            ActiveInputField::Filter => &state.filter_text,
+                            ActiveInputField::Sort => &state.sort_text,
+                        };
+                        if state.query_history.record(field, value) {
+                            if let Err(error) = state.query_history.save() {
+                                state.popup_message =
+                                    Some(format!("Could not save query history: {error}"));
+                            }
+                        }
+                    }
                     if state.active_input.is_some() {
                         if let Some((uri, db, name)) = &state.selected_collection {
                             state.current_documents.clear();
@@ -243,6 +255,16 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
             }
         }
         KeyCode::Right => {
+            if let Some(suggestion) = state.query_suggestion().map(str::to_owned) {
+                let target = match state.active_input {
+                    Some(ActiveInputField::Filter) => &mut state.filter_text,
+                    Some(ActiveInputField::Sort) => &mut state.sort_text,
+                    None => unreachable!(),
+                };
+                state.cursor_position += suggestion.chars().count() - target.chars().count();
+                *target = suggestion;
+                return false;
+            }
             let len = if state.input_context != InputContext::None {
                 state.input_text.chars().count()
             } else {
@@ -260,4 +282,61 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
         _ => {}
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn right_accepts_unicode_suggestion_without_submitting() {
+        let mut state = AppState {
+            mode: AppMode::Insert,
+            filter_text: "{\"şe}".to_owned(),
+            cursor_position: 4,
+            ..Default::default()
+        };
+        state
+            .query_history
+            .record(ActiveInputField::Filter, "{\"şehir\": 1}");
+        handle_insert(
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            &mut state,
+        )
+        .await;
+        assert_eq!(state.filter_text, "{\"şehir\": 1}");
+        assert_eq!(state.cursor_position, state.filter_text.chars().count() - 1);
+        assert!(state.mode == AppMode::Insert);
+        assert!(state.fetch_collection_data.is_none());
+        handle_insert(
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            &mut state,
+        )
+        .await;
+        assert_eq!(state.cursor_position, state.filter_text.chars().count());
+    }
+
+    #[tokio::test]
+    async fn left_and_popup_input_do_not_accept_query_suggestions() {
+        let mut state = AppState {
+            mode: AppMode::Insert,
+            ..Default::default()
+        };
+        state
+            .query_history
+            .record(ActiveInputField::Filter, "{\"n\": 1}");
+        handle_insert(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &mut state).await;
+        assert_eq!(state.filter_text, "{}");
+        assert_eq!(state.cursor_position, 0);
+        state.input_context = InputContext::Uri;
+        state.input_text = "abc".to_owned();
+        handle_insert(
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            &mut state,
+        )
+        .await;
+        assert_eq!(state.input_text, "abc");
+        assert_eq!(state.filter_text, "{}");
+        assert_eq!(state.cursor_position, 1);
+    }
 }

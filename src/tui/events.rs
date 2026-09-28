@@ -2,7 +2,7 @@ use crate::app::{AppMode, AppState};
 use crate::app::{FocusArea, SelectableItem};
 use crate::keybindings::{handle_by_mode, insert};
 use crate::tui::fpicker_events;
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 pub fn is_braced_object(s: &str) -> bool {
     let t = s.trim();
@@ -21,6 +21,20 @@ pub fn clamp_cursor(pos: usize, s: &str) -> usize {
     pos.min(len)
 }
 pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
+    if key.kind == KeyEventKind::Release {
+        return false;
+    }
+    if state.command_palette.is_some() {
+        return crate::command_palette::handle_key(key, state).await;
+    }
+    if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        if crate::command_palette::can_open(state) {
+            state.command_palette = Some(Default::default());
+            state.last_key = None;
+            state.show_help = false;
+        }
+        return false;
+    }
     if state.file_picker.is_some() {
         let should_close = fpicker_events::handle_filepicker_key(key, state).await;
         if should_close {
@@ -33,6 +47,10 @@ pub async fn handle_key_event(key: KeyEvent, state: &mut AppState) -> bool {
 }
 
 pub fn handle_paste_event(text: String, state: &mut AppState) {
+    if state.command_palette.is_some() {
+        crate::command_palette::paste(state, &text);
+        return;
+    }
     if state.file_picker.is_some() || state.mode != AppMode::Insert {
         return;
     }

@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::Style,
-    text::Text,
+    text::{Line, Span, Text},
     widgets::{Block, Paragraph},
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -18,23 +18,25 @@ fn render_command_line(
     prefix: &str,
     value: &str,
     cursor_position: usize,
+    suggestion: Option<&str>,
     theme: &Theme,
 ) {
     let inner_width = area.width as usize;
-    let cursor_position = cursor_position.min(value.graphemes(true).count());
-    let cursor_visual_offset = prefix.width()
-        + value
-            .graphemes(true)
-            .take(cursor_position)
-            .map(|g| g.width())
-            .sum::<usize>();
+    let cursor_byte = value
+        .char_indices()
+        .nth(cursor_position)
+        .map_or(value.len(), |(i, _)| i);
+    let cursor_visual_offset = prefix.width() + value[..cursor_byte].width();
     let scroll_offset = cursor_visual_offset.saturating_sub(inner_width.saturating_sub(1));
-    let command = format!("{prefix}{value}");
+    let display_value = suggestion.unwrap_or(value);
+    let ghost_start = prefix.len() + cursor_byte;
+    let ghost_end = ghost_start + display_value.len().saturating_sub(value.len());
+    let command = format!("{prefix}{display_value}");
     let mut skipped_width = 0;
     let mut visible_width = 0;
-    let mut visible = String::new();
+    let mut visible = Vec::new();
 
-    for grapheme in command.graphemes(true) {
+    for (byte, grapheme) in command.grapheme_indices(true) {
         let width = grapheme.width();
         if skipped_width + width <= scroll_offset {
             skipped_width += width;
@@ -46,10 +48,15 @@ fn render_command_line(
         }
 
         visible_width += width;
-        visible.push_str(grapheme);
+        let color = if byte >= ghost_start && byte < ghost_end {
+            theme.muted
+        } else {
+            theme.primary
+        };
+        visible.push(Span::styled(grapheme, Style::default().fg(color)));
     }
 
-    let paragraph = Paragraph::new(Text::from(visible)).style(Style::default().fg(theme.primary));
+    let paragraph = Paragraph::new(Line::from(visible));
     f.render_widget(paragraph, area);
 
     let cursor_x = area.x + cursor_visual_offset.saturating_sub(skipped_width) as u16;
@@ -67,6 +74,7 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
                     "/",
                     &state.filter_text,
                     state.cursor_position,
+                    state.query_suggestion(),
                     &theme,
                 );
                 return;
@@ -78,6 +86,7 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
                     ":sort ",
                     &state.sort_text,
                     state.cursor_position,
+                    state.query_suggestion(),
                     &theme,
                 );
                 return;
@@ -107,4 +116,35 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
         .block(Block::default());
 
     f.render_widget(paragraph, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn suggestion_is_muted_and_keeps_the_closing_brace_and_cursor() {
+        let mut state = AppState {
+            mode: AppMode::Insert,
+            filter_text: "{\"n}".to_owned(),
+            cursor_position: 3,
+            ..Default::default()
+        };
+        state
+            .query_history
+            .record(ActiveInputField::Filter, "{\"name\": 1}");
+        let mut terminal = Terminal::new(TestBackend::new(30, 1)).unwrap();
+        let frame = terminal
+            .draw(|f| render_status_bar(f, f.area(), &state))
+            .unwrap();
+        let theme = state.theme.palette();
+        assert_eq!(frame.buffer[(3, 0)].symbol(), "n");
+        assert_eq!(frame.buffer[(3, 0)].fg, theme.primary);
+        assert_eq!(frame.buffer[(4, 0)].symbol(), "a");
+        assert_eq!(frame.buffer[(4, 0)].fg, theme.muted);
+        assert_eq!(frame.buffer[(11, 0)].symbol(), "}");
+        assert_eq!(frame.buffer[(11, 0)].fg, theme.primary);
+        assert_eq!(state.cursor_position, 3);
+    }
 }

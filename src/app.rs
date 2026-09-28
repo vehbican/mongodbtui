@@ -146,6 +146,7 @@ pub struct Connection {
 }
 
 pub struct AppState {
+    pub command_palette: Option<crate::command_palette::CommandPalette>,
     pub connections: Vec<Connection>,
     pub input_text: String,
     pub mode: AppMode,
@@ -174,6 +175,7 @@ pub struct AppState {
     pub document_limit: usize,
     pub filter_text: String,
     pub sort_text: String,
+    pub query_history: crate::history::QueryHistory,
     pub active_input: Option<ActiveInputField>,
     pub document_counts: HashMap<(String, String, String), u64>,
     pub selected_field_index: usize,
@@ -196,6 +198,7 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
+            command_palette: None,
             connections: Vec::new(),
             input_text: String::new(),
             mode: AppMode::default(),
@@ -224,6 +227,7 @@ impl Default for AppState {
             document_limit: 100,
             filter_text: "{}".to_string(),
             sort_text: "{}".to_string(),
+            query_history: crate::history::QueryHistory::default(),
             active_input: Some(ActiveInputField::Filter),
             document_counts: HashMap::new(),
             selected_field_index: 0,
@@ -246,6 +250,19 @@ impl Default for AppState {
 }
 
 impl AppState {
+    pub fn query_suggestion(&self) -> Option<&str> {
+        if self.mode != AppMode::Insert || self.input_context != InputContext::None {
+            return None;
+        }
+        let field = self.active_input?;
+        let value = match field {
+            ActiveInputField::Filter => &self.filter_text,
+            ActiveInputField::Sort => &self.sort_text,
+        };
+        self.query_history
+            .suggestion(field, value, self.cursor_position)
+    }
+
     pub fn field_count(&self) -> usize {
         self.current_documents
             .get(self.selected_doc_index)

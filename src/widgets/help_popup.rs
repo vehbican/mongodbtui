@@ -9,11 +9,18 @@ use ratatui::{
 
 pub const HELP_TEXT: &str = r#"
 Global:
+Ctrl+p      Open command palette (normal mode)
 ?           Toggle help popup
 t           Cycle theme (system, emerald, ocean, rose, monochrome)
 y / n       Confirm / cancel a pending action
 q           Quit the application
 Esc         Dismiss popup / clear search hits
+
+Command Palette:
+Type        Search commands by words
+↑ / ↓       Select command
+Enter       Run selected command
+Esc/Ctrl+p  Close palette
 
 Focus Navigation:
 Ctrl+l      Focus → Documents
@@ -53,6 +60,7 @@ Insert Mode:
 Enter       Submit input / apply filter or sort
 Esc         Cancel editing
 ← / →       Move cursor
+→           Accept visible filter/sort history suggestion
 Backspace   Delete character
 Ctrl+V      Paste clipboard
 Ctrl+Shift+V Paste from terminal

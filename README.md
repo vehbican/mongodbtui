@@ -59,10 +59,27 @@ mongodbtui
 | Key        | Action                                |
 |------------|----------------------------------------|
 | `?`        | Toggle help popup                      |
+| `Ctrl+p`   | Open command palette (normal mode)     |
 | `t`        | Cycle theme (system, emerald, ocean, rose, monochrome) |
 | `y` / `n`  | Confirm / cancel a pending action      |
 | `q`        | Quit the application                   |
 | `Esc`      | Dismiss popup / clear search hits      |
+
+### Command Palette
+
+Press `Ctrl+p` in normal mode to search available commands. Type words such as
+`exp col`, `theme ocean`, or `filter`; matching is case-insensitive and supports
+multiple search words. Use `↑` / `↓` to select, `Enter` to run, and `Esc` or
+`Ctrl+p` to close. `Backspace` edits the search; terminal paste is supported.
+
+The palette includes connection and collection actions, document editing and
+deletion, bulk operations, import/export, filter/sort editing and reset, theme
+selection, panel focus, help, and quit. Contextual commands appear when the
+required connection, database, collection, or document is selected. Tree actions
+use the selected tree item; document/query actions use the loaded collection.
+Deletion commands open the existing confirmation prompt.
+
+Close input editors, file pickers, or pending confirmations before opening the palette.
 
 ### Focus Navigation
 | Key            | Action                           |
@@ -111,7 +128,7 @@ mongodbtui
 |-------------|----------------------|
 | `Enter`     | Submit input / apply filter or sort |
 | `Esc`       | Cancel editing       |
-| `← / →`     | Move cursor          |
+| `← / →`     | Move cursor (`→` accepts a visible filter/sort suggestion) |
 | `Backspace` | Delete character     |
 | `Ctrl+V`    | Paste clipboard      |
 | `Ctrl+Shift+V` | Paste from terminal |
@@ -125,10 +142,24 @@ mongodbtui
 | `c`       | Confirm action (import/run)     |
 | `Esc`     | Exit file picker                |
 
+### Filter and Sort History
+
+Submitted filter and sort commands are saved separately across sessions. While editing
+with `/` or `s`, the most recently used command matching your input appears as a muted
+inline suggestion. Press `→` to fill it in, then `Enter` to apply it.
+Suggestions work at the end of the input and just before the closing `}` in the
+default `{}` template. `←` moves the cursor as usual.
+
+Each history keeps up to 500 unique commands, with reused commands moved to the
+most recent position. Empty commands and `{}` are skipped; `Esc` does not save an entry.
+
 ## Config Paths
 
 - The `connections.csv` file is used to store your saved MongoDB connections and is located at:  
   `~/.config/mongodbtui/connections.csv`
+
+- Filter and sort history is stored in `history.json` in the app's config directory
+  (on Linux: `${XDG_CONFIG_HOME:-~/.config}/mongodbtui/history.json`).
 
 - All exported collections and databases (as .json files and folders) are saved under:  
   `~/.local/share/mongodbtui/`

@@ -30,7 +30,9 @@ use widgets::{
 };
 
 mod app;
+mod command_palette;
 mod db;
+mod history;
 mod keybindings;
 mod theme;
 mod tui;
@@ -39,6 +41,7 @@ mod widgets;
 
 fn apply_cursor_style(state: &AppState) {
     let style = match state.mode {
+        _ if state.command_palette.is_some() => SetCursorStyle::SteadyBar,
         AppMode::Insert => SetCursorStyle::SteadyBar,
         AppMode::Normal => SetCursorStyle::SteadyBlock,
     };
@@ -64,6 +67,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     state.rebuild_tree_items();
+    match history::QueryHistory::load() {
+        Ok(history) => state.query_history = history,
+        Err(error) => state.popup_message = Some(format!("Could not load query history: {error}")),
+    }
 
     apply_cursor_style(&state);
 
@@ -108,6 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let area = centered_rect(70, 70, f.area());
                 draw_help_popup(f, area, state.help_scroll, &theme);
             }
+            command_palette::render(f, &state);
         })?;
 
         apply_cursor_style(&state);
