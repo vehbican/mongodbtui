@@ -1,5 +1,6 @@
 use crate::{
     db::client::{count_documents, fetch_documents},
+    db::import_export::ExportProgress,
     theme::ThemeName,
     tui::filepicker::FilePickerState,
 };
@@ -9,6 +10,7 @@ use mongodb::{
     bson::{Document, oid::ObjectId},
 };
 use std::collections::{HashMap, HashSet};
+use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 use unicode_segmentation::UnicodeSegmentation;
 #[derive(PartialEq)]
 pub enum AppMode {
@@ -193,6 +195,9 @@ pub struct AppState {
     pub pending_deletion: Option<PendingDeletion>,
     pub pending_bulk_update: Option<PendingBulkUpdate>,
     pub pending_bulk_deletion: Option<PendingBulkDeletion>,
+    pub export_progress: Option<ExportProgress>,
+    pub export_progress_rx: Option<UnboundedReceiver<ExportProgress>>,
+    pub export_task: Option<JoinHandle<Result<(), String>>>,
 }
 
 impl Default for AppState {
@@ -245,6 +250,9 @@ impl Default for AppState {
             pending_deletion: None,
             pending_bulk_update: None,
             pending_bulk_deletion: None,
+            export_progress: None,
+            export_progress_rx: None,
+            export_task: None,
         }
     }
 }

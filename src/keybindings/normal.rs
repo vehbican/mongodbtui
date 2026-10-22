@@ -10,6 +10,57 @@ use crate::widgets::help_popup::HELP_TEXT;
 use bson::{Bson, Document};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::path::PathBuf;
+use tokio::sync::mpsc;
+
+fn start_collection_export(
+    state: &mut AppState,
+    client: mongodb::Client,
+    db: String,
+    collection: String,
+    path: String,
+) {
+    let (sender, receiver) = mpsc::unbounded_channel();
+    state.export_progress = Some(crate::db::import_export::ExportProgress {
+        label: collection.clone(),
+        completed: 0,
+        total: 0,
+        collection_completed: 0,
+        collection_total: 1,
+    });
+    state.export_progress_rx = Some(receiver);
+    state.export_task = Some(tokio::spawn(async move {
+        crate::db::import_export::export_collection_with_progress(
+            &client,
+            &db,
+            &collection,
+            &path,
+            Some(&sender),
+            0,
+            0,
+            1,
+            1,
+        )
+        .await
+        .map_err(|error| error.to_string())
+    }));
+}
+
+fn start_database_export(state: &mut AppState, client: mongodb::Client, db: String, path: String) {
+    let (sender, receiver) = mpsc::unbounded_channel();
+    state.export_progress = Some(crate::db::import_export::ExportProgress {
+        label: db.clone(),
+        completed: 0,
+        total: 0,
+        collection_completed: 0,
+        collection_total: 0,
+    });
+    state.export_progress_rx = Some(receiver);
+    state.export_task = Some(tokio::spawn(async move {
+        crate::db::import_export::export_database_with_progress(&client, &db, &path, Some(sender))
+            .await
+            .map_err(|error| error.to_string())
+    }));
+}
 
 fn filter_value_json(value: &Bson) -> Result<String, serde_json::Error> {
     match value {
@@ -137,6 +188,9 @@ async fn confirm_bulk_deletion(state: &mut AppState) {
 }
 
 pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
+    if state.export_task.is_some() {
+        return false;
+    }
     if state.pending_deletion.is_some() {
         match key.code {
             KeyCode::Char('y') => confirm_deletion(state).await,
@@ -555,22 +609,13 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                         SelectableItem::Collection { uri: _, db, name } => {
                             let path =
                                 crate::utils::get_data_dir().join(format!("{}_{}.json", db, name));
-                            match crate::db::import_export::export_collection(
-                                client,
-                                db,
-                                name,
-                                path.to_str().unwrap(),
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    state.popup_message_success =
-                                        Some(format!("✅ Exported collection: {}", path.display()))
-                                }
-                                Err(e) => {
-                                    state.popup_message = Some(format!("❌ Export failed: {}", e))
-                                }
-                            }
+                            start_collection_export(
+                                state,
+                                client.clone(),
+                                db.clone(),
+                                name.clone(),
+                                path.to_str().unwrap().to_string(),
+                            );
                         }
 
                         SelectableItem::Database {
@@ -578,21 +623,12 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                             name: db_name,
                         } => {
                             let path = crate::utils::get_data_dir().join(db_name);
-                            match crate::db::import_export::export_database(
-                                client,
-                                db_name,
-                                path.to_str().unwrap(),
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    state.popup_message_success =
-                                        Some(format!("✅ Exported database to: {}", path.display()))
-                                }
-                                Err(e) => {
-                                    state.popup_message = Some(format!("❌ Export failed: {}", e))
-                                }
-                            }
+                            start_database_export(
+                                state,
+                                client.clone(),
+                                db_name.clone(),
+                                path.to_str().unwrap().to_string(),
+                            );
                         }
 
                         _ => {

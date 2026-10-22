@@ -25,7 +25,7 @@ use widgets::{
     documents::render_documents,
     help_popup::draw_help_popup,
     import::{centered_rect, render_file_picker},
-    popup::{render_popup, render_popup_success},
+    popup::{render_export_progress, render_popup, render_popup_success},
     toolbar::render_status_bar,
 };
 
@@ -46,6 +46,29 @@ fn apply_cursor_style(state: &AppState) {
         AppMode::Normal => SetCursorStyle::SteadyBlock,
     };
     let _ = execute!(io::stdout(), style);
+}
+
+async fn update_export(state: &mut AppState) {
+    if let Some(receiver) = state.export_progress_rx.as_mut() {
+        while let Ok(progress) = receiver.try_recv() {
+            state.export_progress = Some(progress);
+        }
+    }
+
+    if state
+        .export_task
+        .as_ref()
+        .is_some_and(|task| task.is_finished())
+    {
+        let task = state.export_task.take().expect("finished export task");
+        match task.await {
+            Ok(Ok(())) => state.popup_message_success = Some("✅ Export completed".to_string()),
+            Ok(Err(error)) => state.popup_message = Some(format!("❌ Export failed: {error}")),
+            Err(error) => state.popup_message = Some(format!("❌ Export failed: {error}")),
+        }
+        state.export_progress = None;
+        state.export_progress_rx = None;
+    }
 }
 
 #[tokio::main]
@@ -100,6 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             render_status_bar(f, chunks[1], &state);
             render_popup(f, f.area(), &state);
             render_popup_success(f, f.area(), &state);
+            render_export_progress(f, f.area(), &state);
 
             if state.mode == AppMode::Insert && state.input_context != InputContext::None {
                 render_input(f, f.area(), &mut state);
@@ -117,6 +141,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             command_palette::render(f, &state);
         })?;
+
+        update_export(&mut state).await;
 
         apply_cursor_style(&state);
 

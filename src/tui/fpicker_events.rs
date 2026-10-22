@@ -1,7 +1,64 @@
 use crate::app::{AppState, SelectableItem};
-use crate::db::import_export::import_database;
+use crate::db::import_export::{import_collection_with_progress, import_database_with_progress};
 use crate::tui::filepicker::{FileEntry, FilePickerMode};
 use crossterm::event::{KeyCode, KeyEvent};
+use tokio::sync::mpsc;
+
+fn start_collection_import(
+    state: &mut AppState,
+    client: mongodb::Client,
+    db_name: String,
+    files: Vec<(String, String)>,
+) {
+    let (sender, receiver) = mpsc::unbounded_channel();
+    state.export_progress = Some(crate::db::import_export::ExportProgress {
+        label: "Import".to_string(),
+        completed: 0,
+        total: 0,
+        collection_completed: 0,
+        collection_total: files.len(),
+    });
+    state.export_progress_rx = Some(receiver);
+    state.export_task = Some(tokio::spawn(async move {
+        let total = files.len();
+        for (index, (collection, path)) in files.into_iter().enumerate() {
+            import_collection_with_progress(
+                &client,
+                &db_name,
+                &collection,
+                &path,
+                Some(&sender),
+                index + 1,
+                total,
+            )
+            .await
+            .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }));
+}
+
+fn start_database_import(
+    state: &mut AppState,
+    client: mongodb::Client,
+    db_name: String,
+    path: String,
+) {
+    let (sender, receiver) = mpsc::unbounded_channel();
+    state.export_progress = Some(crate::db::import_export::ExportProgress {
+        label: "Import".to_string(),
+        completed: 0,
+        total: 0,
+        collection_completed: 0,
+        collection_total: 0,
+    });
+    state.export_progress_rx = Some(receiver);
+    state.export_task = Some(tokio::spawn(async move {
+        import_database_with_progress(&client, &db_name, &path, Some(sender))
+            .await
+            .map_err(|error| error.to_string())
+    }));
+}
 
 pub async fn handle_filepicker_key(event: KeyEvent, state: &mut AppState) -> bool {
     match event.code {
@@ -54,13 +111,24 @@ pub async fn handle_filepicker_key(event: KeyEvent, state: &mut AppState) -> boo
                         return false;
                     };
 
-                    let (success, failed) = picker.perform_import(client, db_name, uri).await;
-                    state.popup_message_success = Some(format!(
-                        "📥 Imported: {} ✅ | ❌ Failed: {}",
-                        success, failed
-                    ));
-
-                    state.collection_to_load = Some((uri.clone(), db_name.clone()));
+                    let files = picker
+                        .selected_files
+                        .iter()
+                        .filter_map(|path| {
+                            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                                return None;
+                            }
+                            Some((
+                                path.file_stem()?.to_str()?.to_string(),
+                                path.to_str()?.to_string(),
+                            ))
+                        })
+                        .collect();
+                    let db_name = db_name.clone();
+                    let uri = uri.clone();
+                    start_collection_import(state, client.clone(), db_name.clone(), files);
+                    state.file_picker = None;
+                    state.collection_to_load = Some((uri, db_name));
                 }
 
                 FilePickerMode::ImportDatabase => {
@@ -88,16 +156,15 @@ pub async fn handle_filepicker_key(event: KeyEvent, state: &mut AppState) -> boo
                         .and_then(|n| n.to_str())
                         .unwrap_or("imported_db");
 
-                    match import_database(client, db_name, folder_path.to_str().unwrap()).await {
-                        Ok(_) => {
-                            state.popup_message_success =
-                                Some(format!("✅ Imported folder as database '{}'", db_name));
-                            state.collection_to_load = Some((uri.clone(), db_name.to_string()));
-                        }
-                        Err(e) => {
-                            state.popup_message = Some(format!("❌ Import failed: {}", e));
-                        }
-                    }
+                    let uri = uri.clone();
+                    start_database_import(
+                        state,
+                        client.clone(),
+                        db_name.to_string(),
+                        folder_path.to_str().unwrap().to_string(),
+                    );
+                    state.file_picker = None;
+                    state.collection_to_load = Some((uri, db_name.to_string()));
                 }
                 FilePickerMode::RunScript => {
                     let Some(FileEntry::Real(entry)) = picker.selected_entry() else {

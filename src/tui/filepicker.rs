@@ -1,5 +1,3 @@
-use crate::db::import_export::import_collection;
-use mongodb::Client;
 use std::collections::HashSet;
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
@@ -34,35 +32,6 @@ impl FilePickerState {
             selected_files: HashSet::new(),
         })
     }
-    pub async fn perform_import(
-        &self,
-        client: &Client,
-        db_name: &str,
-        _uri: &str,
-    ) -> (usize, usize) {
-        let mut success = 0;
-        let mut failed = 0;
-
-        for path in &self.selected_files {
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                let file_stem = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unnamed");
-
-                match import_collection(client, db_name, file_stem, path.to_str().unwrap()).await {
-                    Ok(_) => success += 1,
-                    Err(e) => {
-                        failed += 1;
-                        eprintln!("❌ Failed to import {}: {}", path.display(), e);
-                    }
-                }
-            }
-        }
-
-        (success, failed)
-    }
-
     fn read_entries_with_parent(path: &Path) -> std::io::Result<Vec<FileEntry>> {
         let mut entries = vec![];
 
