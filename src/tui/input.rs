@@ -1,4 +1,4 @@
-use crate::app::{AppMode, AppState, InputContext};
+use crate::app::{AppMode, AppState, ConnectionFormField, InputContext};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -14,6 +14,11 @@ pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
         return;
     }
 
+    if state.input_context == InputContext::NewConnection {
+        render_connection_form(f, area, state);
+        return;
+    }
+
     let input_area = Rect {
         x: area.width / 3,
         y: area.height / 3,
@@ -22,7 +27,7 @@ pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
     };
 
     let title = match state.input_context {
-        InputContext::Uri => "Enter Mongo URI",
+        InputContext::NewConnection => unreachable!(),
         InputContext::ConnectionName => "Edit Connection Name",
         InputContext::CollectionName => "Rename Collection",
         InputContext::SearchCollections => "Search Collections",
@@ -76,4 +81,69 @@ pub fn render_input(f: &mut Frame, area: Rect, state: &mut AppState) {
     f.render_widget(input, input_area);
 
     f.set_cursor_position((input_area.x + cursor_x_offset as u16 + 1, input_area.y + 1));
+}
+
+fn render_connection_form(f: &mut Frame, area: Rect, state: &mut AppState) {
+    let theme = state.theme.palette();
+    let Some(form) = &state.connection_form else {
+        return;
+    };
+    let width = area.width.saturating_mul(2) / 3;
+    let height = 13.min(area.height.saturating_sub(2));
+    let form_area = Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    };
+    f.render_widget(Clear, form_area);
+
+    let fields = [
+        ("Name", &form.name, ConnectionFormField::Name),
+        ("URI", &form.uri, ConnectionFormField::Uri),
+        ("Color (#RRGGBB)", &form.color, ConnectionFormField::Color),
+    ];
+    for (index, (label, value, field)) in fields.iter().enumerate() {
+        let y = form_area.y + 1 + index as u16 * 3;
+        let field_area = Rect {
+            x: form_area.x + 2,
+            y,
+            width: form_area.width.saturating_sub(4),
+            height: 3,
+        };
+        let active = form.active_field == *field;
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(*label)
+            .border_style(Style::default().fg(if active { theme.accent } else { theme.primary }));
+        f.render_widget(Paragraph::new(value.as_str()).block(block), field_area);
+        if active {
+            let cursor_x =
+                field_area.x + 1 + state.cursor_position.min(value.chars().count()) as u16;
+            f.set_cursor_position((
+                cursor_x.min(field_area.x + field_area.width - 2),
+                field_area.y + 1,
+            ));
+        }
+    }
+
+    let footer =
+        Paragraph::new("Tab: next field  •  ↑/↓: color presets  •  Enter: save  •  Esc: cancel")
+            .style(Style::default().fg(theme.muted));
+    f.render_widget(
+        footer,
+        Rect {
+            x: form_area.x + 2,
+            y: form_area.y + form_area.height.saturating_sub(1),
+            width: form_area.width.saturating_sub(4),
+            height: 1,
+        },
+    );
+    f.render_widget(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("New Connection")
+            .border_style(Style::default().fg(theme.accent)),
+        form_area,
+    );
 }

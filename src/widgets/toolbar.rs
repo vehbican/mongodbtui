@@ -107,7 +107,16 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, state: &AppState) {
             .document_counts
             .get(&(uri.clone(), db.clone(), name.clone()))
         {
-            status_line.push_str(&format!(" | {}.{} ({} docs)", db, name, count));
+            let connection_name = state
+                .connections
+                .iter()
+                .find(|connection| &connection.uri == uri)
+                .map(|connection| connection.name.as_str())
+                .unwrap_or(uri.as_str());
+            status_line.push_str(&format!(
+                " | {} / {}.{} ({} docs)",
+                connection_name, db, name, count
+            ));
         }
     }
 

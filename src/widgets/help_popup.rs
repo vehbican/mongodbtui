@@ -24,7 +24,9 @@ Esc/Ctrl+p  Close palette
 
 Focus Navigation:
 Ctrl+l      Focus → Documents
-Ctrl+h      Focus → Connections
+ Ctrl+h      Focus → Connections
+ Tab/Shift+Tab Switch open collection tabs
+ Ctrl+w      Close active collection tab
 
 List Navigation:
 j / ↓       Move down
@@ -40,7 +42,7 @@ x           Export selected collection or database
 i           Import collection into selected database
 I           Import database into selected connection
 f           Run shell script from file picker
-d+d         Request deletion of selected collection or database
+ d+d         Delete selected connection, collection, or database
 
 Documents:
 /           Edit filter command

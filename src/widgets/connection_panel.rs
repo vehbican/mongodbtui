@@ -14,15 +14,24 @@ pub fn render_connections(f: &mut Frame, area: Rect, state: &AppState) {
         .iter()
         .map(|item| match item {
             SelectableItem::Uri {
-                name, connected, ..
+                name,
+                uri,
+                connected,
+                ..
             } => {
+                let connection_color = state
+                    .connections
+                    .iter()
+                    .find(|connection| connection.uri == *uri)
+                    .and_then(|connection| crate::utils::parse_connection_color(&connection.color))
+                    .unwrap_or(theme.foreground);
                 let content = if *connected {
                     Line::from(vec![
                         Span::styled("✔ ", Style::default().fg(theme.success)),
-                        Span::styled(name, Style::default().fg(theme.success)),
+                        Span::styled(name, Style::default().fg(connection_color)),
                     ])
                 } else {
-                    Line::from(Span::raw(name))
+                    Line::from(Span::styled(name, Style::default().fg(connection_color)))
                 };
                 ListItem::new(content)
             }

@@ -36,11 +36,26 @@ impl Default for FocusArea {
 
 #[derive(PartialEq)]
 pub enum InputContext {
-    Uri,
+    NewConnection,
     ConnectionName,
     CollectionName,
     SearchCollections,
     None,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionFormField {
+    Name,
+    Uri,
+    Color,
+}
+
+pub struct ConnectionForm {
+    pub id: Option<usize>,
+    pub name: String,
+    pub uri: String,
+    pub color: String,
+    pub active_field: ConnectionFormField,
 }
 
 pub enum SelectableItem {
@@ -61,6 +76,11 @@ pub enum SelectableItem {
 }
 
 pub enum PendingDeletion {
+    Connection {
+        id: usize,
+        uri: String,
+        name: String,
+    },
     Collection {
         uri: String,
         db: String,
@@ -119,6 +139,7 @@ impl PendingBulkUpdate {
 impl PendingDeletion {
     pub fn confirmation_message(&self) -> String {
         let target = match self {
+            Self::Connection { name, .. } => format!("connection '{name}'"),
             Self::Collection { name, .. } => format!("collection '{name}'"),
             Self::Database { name, .. } => format!("database '{name}'"),
             Self::Document { .. } => "selected document".to_string(),
@@ -145,6 +166,39 @@ pub struct Connection {
     pub id: usize,
     pub uri: String,
     pub name: String,
+    pub color: String,
+}
+
+pub struct CollectionTab {
+    pub key: (String, String, String),
+    pub documents: Vec<Document>,
+    pub loaded: bool,
+    pub selected_doc_index: usize,
+    pub doc_scroll_offset: usize,
+    pub document_line_scroll: u16,
+    pub document_skip: usize,
+    pub filter_text: String,
+    pub sort_text: String,
+    pub selected_field_index: usize,
+    pub expanded_field: Option<(usize, usize)>,
+}
+
+impl CollectionTab {
+    fn new(key: (String, String, String)) -> Self {
+        Self {
+            key,
+            documents: Vec::new(),
+            loaded: false,
+            selected_doc_index: 0,
+            doc_scroll_offset: 0,
+            document_line_scroll: 0,
+            document_skip: 0,
+            filter_text: "{}".to_string(),
+            sort_text: "{}".to_string(),
+            selected_field_index: 0,
+            expanded_field: None,
+        }
+    }
 }
 
 pub struct AppState {
@@ -198,6 +252,9 @@ pub struct AppState {
     pub export_progress: Option<ExportProgress>,
     pub export_progress_rx: Option<UnboundedReceiver<ExportProgress>>,
     pub export_task: Option<JoinHandle<Result<(), String>>>,
+    pub connection_form: Option<ConnectionForm>,
+    pub collection_tabs: Vec<CollectionTab>,
+    pub active_tab: usize,
 }
 
 impl Default for AppState {
@@ -253,11 +310,127 @@ impl Default for AppState {
             export_progress: None,
             export_progress_rx: None,
             export_task: None,
+            connection_form: None,
+            collection_tabs: Vec::new(),
+            active_tab: 0,
         }
     }
 }
 
 impl AppState {
+    pub fn sync_connection_form_input(&mut self) {
+        let Some(form) = self.connection_form.as_mut() else {
+            return;
+        };
+        match form.active_field {
+            ConnectionFormField::Name => form.name = self.input_text.clone(),
+            ConnectionFormField::Uri => form.uri = self.input_text.clone(),
+            ConnectionFormField::Color => form.color = self.input_text.clone(),
+        }
+    }
+
+    pub fn select_connection_form_field(&mut self, field: ConnectionFormField) {
+        self.sync_connection_form_input();
+        let Some(form) = self.connection_form.as_mut() else {
+            return;
+        };
+        form.active_field = field;
+        self.input_text = match field {
+            ConnectionFormField::Name => form.name.clone(),
+            ConnectionFormField::Uri => form.uri.clone(),
+            ConnectionFormField::Color => form.color.clone(),
+        };
+        self.cursor_position = self.input_text.chars().count();
+    }
+
+    pub fn save_active_collection_tab(&mut self) {
+        let Some((uri, db, collection)) = self.selected_collection.clone() else {
+            return;
+        };
+        let key = (uri, db, collection);
+        let Some(tab) = self.collection_tabs.iter_mut().find(|tab| tab.key == key) else {
+            return;
+        };
+        tab.documents = self.current_documents.clone();
+        tab.selected_doc_index = self.selected_doc_index;
+        tab.doc_scroll_offset = self.doc_scroll_offset;
+        tab.document_line_scroll = self.document_line_scroll;
+        tab.document_skip = self.document_skip;
+        tab.filter_text = self.filter_text.clone();
+        tab.sort_text = self.sort_text.clone();
+        tab.selected_field_index = self.selected_field_index;
+        tab.expanded_field = self.expanded_field;
+    }
+
+    pub fn activate_collection(&mut self, key: (String, String, String)) {
+        self.save_active_collection_tab();
+        let tab_index = self
+            .collection_tabs
+            .iter()
+            .position(|tab| tab.key == key)
+            .unwrap_or_else(|| {
+                self.collection_tabs.push(CollectionTab::new(key.clone()));
+                self.collection_tabs.len() - 1
+            });
+        self.active_tab = tab_index;
+        let tab = &self.collection_tabs[tab_index];
+        self.selected_collection = Some(key);
+        self.current_documents = tab.documents.clone();
+        self.selected_doc_index = tab.selected_doc_index;
+        self.doc_scroll_offset = tab.doc_scroll_offset;
+        self.document_line_scroll = tab.document_line_scroll;
+        self.document_skip = tab.document_skip;
+        self.filter_text = tab.filter_text.clone();
+        self.sort_text = tab.sort_text.clone();
+        self.selected_field_index = tab.selected_field_index;
+        self.expanded_field = tab.expanded_field;
+        self.fetch_collection_data = if tab.loaded {
+            None
+        } else {
+            self.selected_collection.clone()
+        };
+    }
+
+    pub fn mark_active_collection_loaded(&mut self) {
+        if let Some(tab) = self.collection_tabs.get_mut(self.active_tab) {
+            tab.loaded = true;
+        }
+        self.save_active_collection_tab();
+    }
+
+    pub fn switch_collection_tab(&mut self, offset: isize) {
+        if self.collection_tabs.len() < 2 {
+            return;
+        }
+        self.save_active_collection_tab();
+        self.active_tab = (self.active_tab as isize + offset)
+            .rem_euclid(self.collection_tabs.len() as isize) as usize;
+        let key = self.collection_tabs[self.active_tab].key.clone();
+        self.activate_collection(key);
+    }
+
+    pub fn close_active_collection_tab(&mut self) {
+        if self.collection_tabs.is_empty() {
+            return;
+        }
+
+        self.save_active_collection_tab();
+        self.collection_tabs.remove(self.active_tab);
+        self.fetch_collection_data = None;
+
+        if self.collection_tabs.is_empty() {
+            self.active_tab = 0;
+            self.selected_collection = None;
+            self.current_documents.clear();
+            self.document_counts.clear();
+            return;
+        }
+
+        self.active_tab = self.active_tab.min(self.collection_tabs.len() - 1);
+        let key = self.collection_tabs[self.active_tab].key.clone();
+        self.activate_collection(key);
+    }
+
     pub fn query_suggestion(&self) -> Option<&str> {
         if self.mode != AppMode::Insert || self.input_context != InputContext::None {
             return None;
@@ -291,14 +464,6 @@ impl AppState {
         if self.selected_field_index > 0 {
             self.selected_field_index -= 1;
         }
-    }
-
-    pub fn reset_field_index(&mut self) {
-        self.selected_field_index = 0;
-        self.selected_doc_index = 0;
-        self.doc_scroll_offset = 0;
-        self.document_line_scroll = 0;
-        self.expanded_field = None;
     }
 
     pub fn toggle_selected_field_expansion(&mut self) {

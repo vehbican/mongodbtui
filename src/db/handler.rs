@@ -124,6 +124,7 @@ pub async fn fetch_and_update_documents(state: &mut AppState, uri: &str, db: &st
                 }
                 state.selected_collection =
                     Some((uri.to_string(), db.to_string(), name.to_string()));
+                state.mark_active_collection_loaded();
             }
             Err(e) => {
                 state.popup_message = Some(format!(

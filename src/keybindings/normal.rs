@@ -1,6 +1,6 @@
 use crate::app::{
-    ActiveInputField, AppMode, AppState, FocusArea, InputContext, PendingBulkDeletion,
-    PendingDeletion, SelectableItem,
+    ActiveInputField, AppMode, AppState, ConnectionForm, ConnectionFormField, FocusArea,
+    InputContext, PendingBulkDeletion, PendingDeletion, SelectableItem,
 };
 use crate::keybindings::editor::{open_bulk_update_editor, open_in_external_editor};
 use crate::tui::events::{goto_collection, inner_end_pos};
@@ -73,14 +73,42 @@ async fn confirm_deletion(state: &mut AppState) {
     let Some(deletion) = state.pending_deletion.take() else {
         return;
     };
-    let Some(client) = state.mongo_client.clone() else {
-        state.popup_message = Some("❌ No active MongoDB connection.".to_string());
-        return;
-    };
+    let client = state.mongo_client.clone();
 
     state.popup_message = None;
     match deletion {
+        PendingDeletion::Connection { id, uri, name } => {
+            match crate::utils::delete_connection(id) {
+                Ok(()) => {
+                    state.connections = crate::utils::load_connections().unwrap_or_default();
+                    if state.connected_uri.as_deref() == Some(uri.as_str()) {
+                        state.mongo_client = None;
+                        state.connected_uri = None;
+                        state.database_map.remove(&uri);
+                        state.expanded_uris.remove(&uri);
+                        state.expanded_dbs.retain(|(db_uri, _)| db_uri != &uri);
+                        state.collection_map.retain(|(db_uri, _), _| db_uri != &uri);
+                        state.selected_collection = None;
+                        state.current_documents.clear();
+                    }
+                    state.collection_tabs.retain(|tab| tab.key.0 != uri);
+                    state.active_tab = 0;
+                    state.rebuild_tree_items();
+                    state.selected_index = state
+                        .selected_index
+                        .min(state.tree_items.len().saturating_sub(1));
+                    state.popup_message_success = Some(format!("✅ Deleted connection: {name}"));
+                }
+                Err(error) => {
+                    state.popup_message = Some(format!("❌ Failed to delete connection: {error}"));
+                }
+            }
+        }
         PendingDeletion::Collection { uri, db, name } => {
+            let Some(client) = client else {
+                state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+                return;
+            };
             match crate::db::client::delete_collection(&client, &db, &name).await {
                 Ok(_) => {
                     state.popup_message_success = Some(format!("✅ Deleted collection: {name}"));
@@ -92,6 +120,10 @@ async fn confirm_deletion(state: &mut AppState) {
             }
         }
         PendingDeletion::Database { uri, name } => {
+            let Some(client) = client else {
+                state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+                return;
+            };
             match crate::db::client::delete_database(&client, &name).await {
                 Ok(_) => {
                     state.popup_message_success = Some(format!("✅ Deleted database: {name}"));
@@ -103,6 +135,10 @@ async fn confirm_deletion(state: &mut AppState) {
             }
         }
         PendingDeletion::Document { db, collection, id } => {
+            let Some(client) = client else {
+                state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+                return;
+            };
             match crate::db::client::delete_document_by_id(&client, &db, &collection, id).await {
                 Ok(_) => {
                     state.reload_documents_for_selected_collection().await;
@@ -119,6 +155,10 @@ async fn confirm_deletion(state: &mut AppState) {
             id,
             name,
         } => {
+            let Some(client) = client else {
+                state.popup_message = Some("❌ No active MongoDB connection.".to_string());
+                return;
+            };
             match crate::db::client::delete_field_in_document(&client, &db, &collection, id, &name)
                 .await
             {
@@ -230,9 +270,34 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
     match key.code {
         KeyCode::Char('q') => return true,
 
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if state.focus == FocusArea::Documents {
+                state.close_active_collection_tab();
+            }
+        }
+
+        KeyCode::Tab => {
+            if state.focus == FocusArea::Documents {
+                state.switch_collection_tab(1);
+            }
+        }
+
+        KeyCode::BackTab => {
+            if state.focus == FocusArea::Documents {
+                state.switch_collection_tab(-1);
+            }
+        }
+
         KeyCode::Char('o') => {
             state.mode = AppMode::Insert;
-            state.input_context = InputContext::Uri;
+            state.input_context = InputContext::NewConnection;
+            state.connection_form = Some(ConnectionForm {
+                id: None,
+                name: String::new(),
+                uri: String::new(),
+                color: "#00D084".to_string(),
+                active_field: ConnectionFormField::Name,
+            });
             state.input_text.clear();
             state.cursor_position = state.input_text.chars().count();
         }
@@ -364,6 +429,20 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     FocusArea::Connections => {
                         if let Some(item) = state.tree_items.get(state.selected_index) {
                             match item {
+                                SelectableItem::Uri { uri, name, .. } => {
+                                    if let Some(connection) = state
+                                        .connections
+                                        .iter()
+                                        .find(|connection| connection.uri == *uri)
+                                    {
+                                        state.pending_deletion =
+                                            Some(PendingDeletion::Connection {
+                                                id: connection.id,
+                                                uri: uri.clone(),
+                                                name: name.clone(),
+                                            });
+                                    }
+                                }
                                 SelectableItem::Collection { uri, db, name } => {
                                     state.pending_deletion = Some(PendingDeletion::Collection {
                                         uri: uri.clone(),
@@ -378,8 +457,6 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                                         name: name.clone(),
                                     });
                                 }
-
-                                _ => {}
                             }
                         }
                     }
@@ -506,11 +583,17 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                     match item {
                         SelectableItem::Uri { uri, .. } => {
                             if let Some(conn) = state.connections.iter().find(|c| &c.uri == uri) {
-                                let uri = crate::utils::resolve_connection_uri(conn)
-                                    .unwrap_or_else(|_| conn.uri.clone());
                                 state.mode = AppMode::Insert;
-                                state.input_context = InputContext::ConnectionName;
-                                state.input_text = format!("{};{};{}", conn.id, uri, conn.name);
+                                state.input_context = InputContext::NewConnection;
+                                state.connection_form = Some(ConnectionForm {
+                                    id: Some(conn.id),
+                                    name: conn.name.clone(),
+                                    uri: crate::utils::resolve_connection_uri(conn)
+                                        .unwrap_or_else(|_| conn.uri.clone()),
+                                    color: conn.color.clone(),
+                                    active_field: ConnectionFormField::Name,
+                                });
+                                state.input_text = conn.name.clone();
                                 state.cursor_position = state.input_text.chars().count();
                             }
                         }
@@ -773,20 +856,9 @@ pub async fn handle_normal(key: KeyEvent, state: &mut AppState) -> bool {
                         }
 
                         SelectableItem::Collection { uri, db, name } => {
-                            state.current_documents.clear();
-                            state.document_skip = 0;
-                            state.selected_collection =
-                                Some((uri.clone(), db.clone(), name.clone()));
-                            state.fetch_collection_data =
-                                Some((uri.clone(), db.clone(), name.clone()));
+                            state.activate_collection((uri.clone(), db.clone(), name.clone()));
                             state.focus = FocusArea::Documents;
-                            state.selected_doc_index = 0;
-                            state.doc_scroll_offset = 0;
-                            state.document_line_scroll = 0;
-                            state.filter_text = "{}".to_string();
-                            state.sort_text = "{}".to_string();
                             state.cursor_position = 1;
-                            state.reset_field_index();
                         }
                     }
                 }

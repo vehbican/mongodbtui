@@ -10,12 +10,16 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
     path::PathBuf,
+    process::Command,
     thread,
     time::{Duration, Instant},
 };
 
 const KEYRING_SERVICE: &str = "mongodbtui";
 const PASSWORD_SENTINEL: &str = "__MONGODBTUI_KEYRING__";
+pub const CONNECTION_COLOR_PRESETS: [&str; 6] = [
+    "#E53935", "#FB8C00", "#FDD835", "#43A047", "#1E88E5", "#8E24AA",
+];
 
 fn get_config_file_path() -> PathBuf {
     let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -30,6 +34,14 @@ fn get_theme_file_path() -> PathBuf {
     path.push("mongodbtui");
     std::fs::create_dir_all(&path).ok();
     path.push("theme");
+    path
+}
+
+fn get_connection_colors_path() -> PathBuf {
+    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("mongodbtui");
+    std::fs::create_dir_all(&path).ok();
+    path.push("connection_colors");
     path
 }
 
@@ -100,6 +112,7 @@ fn secure_connection_for_storage(conn: &Connection) -> io::Result<Connection> {
             id: conn.id,
             uri: conn.uri.clone(),
             name: conn.name.clone(),
+            color: conn.color.clone(),
         });
     }
 
@@ -108,6 +121,7 @@ fn secure_connection_for_storage(conn: &Connection) -> io::Result<Connection> {
             id: conn.id,
             uri: conn.uri.clone(),
             name: conn.name.clone(),
+            color: conn.color.clone(),
         });
     };
 
@@ -119,6 +133,7 @@ fn secure_connection_for_storage(conn: &Connection) -> io::Result<Connection> {
         id: conn.id,
         uri: redacted_uri,
         name: conn.name.clone(),
+        color: conn.color.clone(),
     })
 }
 
@@ -160,9 +175,19 @@ pub fn update_connection(input: &str) -> std::io::Result<()> {
     }
 
     let mut connections = crate::utils::load_connections().unwrap_or_default();
+    let color = connections
+        .iter()
+        .find(|connection| connection.id == id)
+        .map(|connection| connection.color.clone())
+        .unwrap_or_else(|| "#00D084".to_string());
     connections.retain(|c| c.id != id);
 
-    connections.push(crate::app::Connection { id, uri, name });
+    connections.push(crate::app::Connection {
+        id,
+        uri,
+        name,
+        color,
+    });
 
     crate::utils::overwrite_connections(&connections)?;
 
@@ -180,7 +205,21 @@ pub fn overwrite_connections(conns: &[Connection]) -> std::io::Result<()> {
         let conn = secure_connection_for_storage(conn)?;
         writeln!(file, "{};{};{}", conn.id, conn.uri, conn.name)?;
     }
+    save_connection_colors(conns)?;
     Ok(())
+}
+
+pub fn delete_connection(id: usize) -> std::io::Result<()> {
+    let mut connections = load_connections()?;
+    let original_len = connections.len();
+    connections.retain(|connection| connection.id != id);
+    if connections.len() == original_len {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Connection not found",
+        ));
+    }
+    overwrite_connections(&connections)
 }
 
 pub fn save_connection(uri: &str, name: &str) -> std::io::Result<()> {
@@ -212,9 +251,71 @@ pub fn save_connection(uri: &str, name: &str) -> std::io::Result<()> {
         id: new_id,
         uri: uri.to_string(),
         name: name.to_string(),
+        color: "#00D084".to_string(),
     })?;
 
     writeln!(file, "{};{};{}", conn.id, conn.uri, conn.name)?;
+    let mut connections = load_connections().unwrap_or_default();
+    connections.push(conn);
+    save_connection_colors(&connections)?;
+    Ok(())
+}
+
+pub fn save_connection_with_color(uri: &str, name: &str, color: &str) -> std::io::Result<()> {
+    save_connection(uri, name)?;
+    let mut connections = load_connections()?;
+    if let Some(connection) = connections
+        .iter_mut()
+        .filter(|connection| connection.name == name)
+        .max_by_key(|connection| connection.id)
+    {
+        connection.color = format!("#{color}", color = color.trim_start_matches('#'));
+    }
+    overwrite_connections(&connections)
+}
+
+pub fn update_connection_with_color(
+    id: usize,
+    uri: &str,
+    name: &str,
+    color: &str,
+) -> std::io::Result<()> {
+    let mut connections = load_connections()?;
+    let Some(connection) = connections
+        .iter_mut()
+        .find(|connection| connection.id == id)
+    else {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Connection not found",
+        ));
+    };
+    connection.uri = uri.to_string();
+    connection.name = name.to_string();
+    connection.color = format!("#{color}", color = color.trim_start_matches('#'));
+    overwrite_connections(&connections)
+}
+
+pub fn parse_connection_color(value: &str) -> Option<ratatui::style::Color> {
+    let value = value.trim().trim_start_matches('#');
+    if value.len() != 6 {
+        return None;
+    }
+    let red = u8::from_str_radix(&value[0..2], 16).ok()?;
+    let green = u8::from_str_radix(&value[2..4], 16).ok()?;
+    let blue = u8::from_str_radix(&value[4..6], 16).ok()?;
+    Some(ratatui::style::Color::Rgb(red, green, blue))
+}
+
+fn save_connection_colors(conns: &[Connection]) -> io::Result<()> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(get_connection_colors_path())?;
+    for conn in conns {
+        writeln!(file, "{};{}", conn.id, conn.color)?;
+    }
     Ok(())
 }
 
@@ -232,25 +333,11 @@ pub fn resolve_connection_uri_by_stored_uri(
         Ok(uri.to_string())
     }
 }
-pub fn parse_connection_input(input: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = input.trim().split(';').map(|s| s.trim()).collect();
-
-    if parts.len() == 2 {
-        let uri = parts[0];
-        let name = parts[1];
-
-        if !uri.is_empty() && !name.is_empty() && name.len() >= 1 && uri.len() >= 1 {
-            return Some((uri.to_string(), name.to_string()));
-        }
-    }
-
-    None
-}
-
 pub fn load_connections() -> std::io::Result<Vec<Connection>> {
     let path = get_config_file_path();
     if let Ok(file) = File::open(path) {
         let reader = BufReader::new(file);
+        let colors = load_connection_colors();
         let mut connections = Vec::new();
 
         for line in reader.lines().flatten() {
@@ -261,6 +348,10 @@ pub fn load_connections() -> std::io::Result<Vec<Connection>> {
                         id,
                         uri: parts[1].to_string(),
                         name: parts[2].to_string(),
+                        color: colors
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_else(|| "#00D084".to_string()),
                     });
                 }
             }
@@ -271,10 +362,41 @@ pub fn load_connections() -> std::io::Result<Vec<Connection>> {
         Ok(vec![])
     }
 }
+
+fn load_connection_colors() -> std::collections::HashMap<usize, String> {
+    let Ok(file) = File::open(get_connection_colors_path()) else {
+        return std::collections::HashMap::new();
+    };
+    BufReader::new(file)
+        .lines()
+        .flatten()
+        .filter_map(|line| {
+            let (id, color) = line.split_once(';')?;
+            Some((id.parse().ok()?, color.to_string()))
+        })
+        .collect()
+}
 pub fn read_clipboard_string() -> Result<String, String> {
-    let mut cb = Clipboard::new().map_err(|e| format!("Could not open clipboard: {e}"))?;
-    cb.get_text()
-        .map_err(|e| format!("Could not read clipboard: {e}"))
+    if let Ok(mut cb) = Clipboard::new() {
+        if let Ok(text) = cb.get_text() {
+            return Ok(text);
+        }
+    }
+
+    for (program, args) in [
+        ("wl-paste", vec!["--no-newline"]),
+        ("xclip", vec!["-selection", "clipboard", "-o"]),
+        ("xsel", vec!["--clipboard", "--output"]),
+    ] {
+        if let Ok(output) = Command::new(program).args(args).output()
+            && output.status.success()
+        {
+            return String::from_utf8(output.stdout)
+                .map_err(|e| format!("Clipboard text is not valid UTF-8: {e}"));
+        }
+    }
+
+    Err("Could not read clipboard. Install wl-clipboard, xclip, or xsel.".to_string())
 }
 
 #[cfg(target_os = "linux")]

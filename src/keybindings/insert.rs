@@ -1,8 +1,8 @@
 use crate::app::SelectableItem;
-use crate::app::{ActiveInputField, AppMode, AppState, InputContext};
+use crate::app::{ActiveInputField, AppMode, AppState, ConnectionFormField, InputContext};
 use crate::tui::events::{clamp_cursor, goto_collection, is_braced_object};
 use crate::utils::read_clipboard_string;
-use crate::utils::{load_connections, parse_connection_input, save_connection};
+use crate::utils::{load_connections, parse_connection_color, save_connection_with_color};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn handle_paste_text(mut text: String, state: &mut AppState) {
@@ -23,6 +23,9 @@ pub fn handle_paste_text(mut text: String, state: &mut AppState) {
 
     if state.input_context != InputContext::None {
         paste_at(&mut state.input_text);
+        if state.input_context == InputContext::NewConnection {
+            state.sync_connection_form_input();
+        }
     } else {
         match state.active_input {
             Some(ActiveInputField::Filter) => paste_at(&mut state.filter_text),
@@ -36,27 +39,45 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
     match key.code {
         KeyCode::Enter => {
             match state.input_context {
-                InputContext::Uri => {
-                    if let Some((uri, name)) = parse_connection_input(&state.input_text) {
-                        match save_connection(&uri, &name) {
-                            Ok(()) => {
-                                state.connections = load_connections().unwrap_or_default();
-                                state.rebuild_tree_items();
-                                state.popup_message = None;
-                                state.popup_message_success = None;
-                            }
-                            Err(e) => {
-                                state.popup_message = Some(e.to_string());
-                                return false;
-                            }
-                        }
-                    } else {
-                        state.popup_message =
-                            Some("Invalid input. Use format: URI;NAME".to_string());
+                InputContext::NewConnection => {
+                    state.sync_connection_form_input();
+                    let Some(form) = &state.connection_form else {
+                        return false;
+                    };
+                    if form.name.trim().is_empty() || form.uri.trim().is_empty() {
+                        state.popup_message = Some("Name and URI cannot be empty.".to_string());
                         return false;
                     }
+                    if parse_connection_color(&form.color).is_none() {
+                        state.popup_message =
+                            Some("Color must be a RGB hex value, e.g. #00D084.".to_string());
+                        return false;
+                    }
+                    let result = match form.id {
+                        Some(id) => crate::utils::update_connection_with_color(
+                            id,
+                            &form.uri,
+                            &form.name,
+                            &form.color,
+                        ),
+                        None => save_connection_with_color(&form.uri, &form.name, &form.color),
+                    };
+                    match result {
+                        Ok(()) => {
+                            state.connections = load_connections().unwrap_or_default();
+                            state.rebuild_tree_items();
+                            state.connection_form = None;
+                            state.mode = AppMode::Normal;
+                            state.input_context = InputContext::None;
+                            state.input_text.clear();
+                            state.popup_message_success = Some("Connection saved.".to_string());
+                        }
+                        Err(error) => {
+                            state.popup_message = Some(error.to_string());
+                            return false;
+                        }
+                    }
                 }
-
                 InputContext::ConnectionName => {
                     match crate::utils::update_connection(&state.input_text) {
                         Ok(_) => {
@@ -173,13 +194,54 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                 state.mode = AppMode::Normal;
                 state.input_context = InputContext::None;
                 state.active_input = None;
+                state.connection_form = None;
             }
         }
-
-        KeyCode::Char('v')
-            if key.modifiers.contains(KeyModifiers::CONTROL)
-                && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+        KeyCode::Tab => {
+            if state.input_context == InputContext::NewConnection {
+                let next = match state.connection_form.as_ref().map(|form| form.active_field) {
+                    Some(ConnectionFormField::Name) => ConnectionFormField::Uri,
+                    Some(ConnectionFormField::Uri) => ConnectionFormField::Color,
+                    _ => ConnectionFormField::Name,
+                };
+                state.select_connection_form_field(next);
+            }
+        }
+        KeyCode::BackTab => {
+            if state.input_context == InputContext::NewConnection {
+                let previous = match state.connection_form.as_ref().map(|form| form.active_field) {
+                    Some(ConnectionFormField::Name) => ConnectionFormField::Color,
+                    Some(ConnectionFormField::Uri) => ConnectionFormField::Name,
+                    _ => ConnectionFormField::Uri,
+                };
+                state.select_connection_form_field(previous);
+            }
+        }
+        KeyCode::Up | KeyCode::Down
+            if state.input_context == InputContext::NewConnection
+                && state
+                    .connection_form
+                    .as_ref()
+                    .is_some_and(|form| form.active_field == ConnectionFormField::Color) =>
         {
+            state.sync_connection_form_input();
+            let Some(form) = state.connection_form.as_mut() else {
+                return false;
+            };
+            let presets = &crate::utils::CONNECTION_COLOR_PRESETS;
+            let current = presets.iter().position(|color| *color == form.color);
+            let index = current.unwrap_or(0);
+            let next = if key.code == KeyCode::Up {
+                (index + presets.len() - 1) % presets.len()
+            } else {
+                (index + 1) % presets.len()
+            };
+            form.color = presets[next].to_string();
+            state.input_text = form.color.clone();
+            state.cursor_position = state.input_text.chars().count();
+        }
+
+        KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             if let Ok(clip) = read_clipboard_string() {
                 handle_paste_text(clip, state);
             } else {
@@ -192,6 +254,9 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                 chars.insert(state.cursor_position, c);
                 state.input_text = chars.iter().collect();
                 state.cursor_position += 1;
+                if state.input_context == InputContext::NewConnection {
+                    state.sync_connection_form_input();
+                }
             } else {
                 match state.active_input {
                     Some(ActiveInputField::Filter) => {
@@ -217,6 +282,9 @@ pub async fn handle_insert(key: KeyEvent, state: &mut AppState) -> bool {
                 chars.remove(state.cursor_position - 1);
                 state.input_text = chars.iter().collect();
                 state.cursor_position -= 1;
+                if state.input_context == InputContext::NewConnection {
+                    state.sync_connection_form_input();
+                }
             } else {
                 match state.active_input {
                     Some(ActiveInputField::Filter) => {
@@ -328,7 +396,7 @@ mod tests {
         handle_insert(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &mut state).await;
         assert_eq!(state.filter_text, "{}");
         assert_eq!(state.cursor_position, 0);
-        state.input_context = InputContext::Uri;
+        state.input_context = InputContext::ConnectionName;
         state.input_text = "abc".to_owned();
         handle_insert(
             KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
